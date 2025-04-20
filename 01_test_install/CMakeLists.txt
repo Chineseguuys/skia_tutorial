@@ -12,7 +12,9 @@ add_executable(${PROJECT_NAME}
 
 target_include_directories(${PROJECT_NAME}
         PUBLIC
-        ~/Android/Skia/)
+        ~/Android/Skia/
+        ~/Android/
+)
 
 target_link_directories(${PROJECT_NAME}
     PUBLIC

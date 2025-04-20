@@ -1,10 +1,10 @@
-#include "include/core/SkBitmap.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkStream.h"
-#include "include/encode/SkPngEncoder.h"
-#include "include/effects/SkGradientShader.h"
+#include "Skia/include/core/SkBitmap.h"
+#include "Skia/include/core/SkPaint.h"
+#include "Skia/include/core/SkRect.h"
+#include "Skia/include/core/SkCanvas.h"
+#include "Skia/include/core/SkStream.h"
+#include "Skia/include/encode/SkPngEncoder.h"
+#include "Skia/include/effects/SkGradientShader.h"
 
 // for log
 #include <spdlog/spdlog.h>

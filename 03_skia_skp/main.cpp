@@ -1,29 +1,30 @@
-#include "include/core/SkCanvas.h"
-#include "include/core/SkSurface.h"
-#include "include/core/SkStream.h"
-#include "include/core/SkPictureRecorder.h"
-#include "include/core/SkPicture.h"
-#include "include/gpu/gl/GrGLInterface.h"
-#include "include/gpu/ganesh/gl/GrGLDirectContext.h"
-#include "include/gpu/gl/GrGLTypes.h"
-#include "include/core/SkBitmap.h"
-#include "include/encode/SkPngEncoder.h"
+#include "Skia/include/core/SkCanvas.h"
+#include "Skia/include/core/SkSurface.h"
+#include "Skia/include/core/SkStream.h"
+#include "Skia/include/core/SkPictureRecorder.h"
+#include "Skia/include/core/SkPicture.h"
+#include "Skia/include/gpu/gl/GrGLInterface.h"
+#include "Skia/include/gpu/ganesh/gl/GrGLDirectContext.h"
+#include "Skia/include/gpu/gl/GrGLTypes.h"
+#include "Skia/include/core/SkBitmap.h"
+#include "Skia/include/encode/SkPngEncoder.h"
 
-#include "include/core/SkFontStyle.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkFontMgr.h"
-#include "include/ports/SkFontMgr_empty.h"
-#include "include/ports/SkFontMgr_directory.h"
+#include "Skia/include/core/SkFontStyle.h"
+#include "Skia/include/core/SkTypeface.h"
+#include "Skia/include/core/SkFontMgr.h"
+#include "Skia/include/ports/SkFontMgr_empty.h"
+#include "Skia/include/ports/SkFontMgr_directory.h"
 
-#include "include/core/SkFont.h"
-#include "include/core/SkTextBlob.h"
+#include "Skia/include/core/SkFont.h"
+#include "Skia/include/core/SkTextBlob.h"
 
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <GL/glu.h>
 
 #include <spdlog/spdlog.h>
-
+#include <chrono>
+#include <iomanip>
 
 static sk_sp<SkFontMgr> fontMgr;
 
@@ -47,6 +48,29 @@ void savePictureAsSKP(sk_sp<SkPicture> picture, const char* fileName) {
         return;
     }
     picture->serialize(&file);
+}
+
+std::string generate_filename(const std::string& prefix, const std::string& postfix) {
+    // 获取当前系统时间
+    auto now = std::chrono::system_clock::now();
+    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+    // 转换为本地时间（线程安全版本）
+    struct std::tm time_info;
+    #if defined(_WIN32)
+        localtime_s(&time_info, &now_time);  // Windows 版本
+    #else
+        localtime_r(&now_time, &time_info);  // Linux/macOS 版本
+    #endif
+    // 格式化时间字符串
+    std::ostringstream oss;
+    oss << prefix << "-"
+        << (time_info.tm_year + 1900) << "_"
+        << std::setfill('0') << std::setw(2) << (time_info.tm_mon + 1) << "_"
+        << std::setw(2) << time_info.tm_mday << "_"
+        << std::setw(2) << time_info.tm_hour << "_"
+        << std::setw(2) << time_info.tm_min << "_"
+        << std::setw(2) << time_info.tm_sec << postfix;
+    return oss.str();
 }
 
 int main(int argc, char* argv[]) {
@@ -128,8 +152,10 @@ int main(int argc, char* argv[]) {
     bitmap.allocPixels(imageInfo, imageInfo.minRowBytes());
     surface->readPixels(bitmap, 0, 0);
 
-    saveBitmapAsPng(bitmap, "output.png");
-    savePictureAsSKP(picture, "output.skp");
+    std::string pngFileName = generate_filename("output", "png");
+    std::string skpFileName = generate_filename("output", "skp");
+    saveBitmapAsPng(bitmap, pngFileName.c_str());
+    savePictureAsSKP(picture, skpFileName.c_str());
 
 #if 1
     spdlog::info(" {}: end of skia function", __FUNCTION__);

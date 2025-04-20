@@ -1,0 +1,6 @@
+[
+{
+  "directory": "/home/yanjiangha/mirrors/sda1_doc/code/skia_2d/50_percent_srgb",
+  "arguments": ["/usr/bin/gcc", "-c", "-m64", "-std=c++17", "-I/home/yanjiangha/Android", "-I/home/yanjiangha/Android/Skia", "-Ibuild/.gens/percent_gray/linux/x86_64/release/platform/windows/idl", "-I", "/home/yanjiangha/.local_software/vcpkg/vcpkg/installed/x64-linux/lib/pkgconfig/../../include", "-o", "build/.objs/percent_gray/linux/x86_64/release/main.cpp.o", "main.cpp"],
+  "file": "main.cpp"
+}]
