@@ -27,6 +27,7 @@
 
 #include "Skia/include/core/SkMaskFilter.h"
 #include "Skia/include/core/SkBlurTypes.h"
+#include "include/core/SkRect.h"
 
 #include <GL/gl.h>
 #include <GL/glx.h>
@@ -38,6 +39,7 @@
 #include <spdlog/spdlog.h>
 #include <iomanip>
 #include <chrono>
+#include <sstream>
 #include <string>
 
 
@@ -124,74 +126,26 @@ bool loadPngToBitmap(const char* filePath, SkBitmap& bitmap) {
 }
 
 void draw(SkCanvas* canvas) {
-    SkBitmap alpha, bitmap;
-    bitmap.allocN32Pixels(100, 100);
-    SkCanvas offscreen(bitmap);
-    offscreen.clear(0);
-    SkPaint paint;
-    paint.setAntiAlias(true);
-    paint.setColor(SK_ColorBLUE);
-    paint.setStyle(SkPaint::kStroke_Style);
-    paint.setStrokeWidth(20);
-    offscreen.drawCircle(50, 50, 39, paint);
-    // 将 alpha 通道单独拿出来
-    bitmap.extractAlpha(&alpha);
-    paint.setColor(SK_ColorRED);
-    canvas->drawImage(bitmap.asImage(), 0, 0, SkSamplingOptions(), nullptr);
-    canvas->drawImage(alpha.asImage(), 100, 0, SkSamplingOptions(), &paint);
+    SkIRect bounds, s;
+    source.getBounds(&bounds);
+    spdlog::info("bounds: {}, {}, {}, {}", bounds.fLeft, bounds.fTop, bounds.fRight, bounds.fBottom);
+    SkBitmap subset;
 
-    std::string offscreenSaveName = generate_filename("offscreen", "png");
-    std::string alphaSaveName = generate_filename("alpha", "png");
-    saveBitmapAsPng(bitmap, offscreenSaveName.c_str());
-    saveBitmapAsPng(alpha, alphaSaveName.c_str());
-}
-
-void draw1(SkCanvas* canvas) {
-    auto radiusToSigma = [](SkScalar radius) -> SkScalar {
-         static const SkScalar kBLUR_SIGMA_SCALE = 0.57735f;
-         return radius > 0 ? kBLUR_SIGMA_SCALE * radius + 0.5f : 0.0f;
-    };
-    SkBitmap alpha, bitmap;
-    bitmap.allocN32Pixels(100, 100);
-    SkCanvas offscreen(bitmap);
-    offscreen.clear(0);
-    SkPaint paint;
-    paint.setAntiAlias(true);
-    paint.setColor(SK_ColorBLUE);
-    paint.setStyle(SkPaint::kStroke_Style);
-    paint.setStrokeWidth(20);
-    offscreen.drawCircle(50, 50, 39, paint);
-    paint.setMaskFilter(SkMaskFilter::MakeBlur(kNormal_SkBlurStyle, radiusToSigma(25)));
-    SkIPoint offset;
-    bitmap.extractAlpha(&alpha, &paint, &offset);
-    paint.setColor(SK_ColorRED);
-    canvas->drawImage(bitmap.asImage(), 0, -offset.fY, SkSamplingOptions(), &paint);
-    canvas->drawImage(alpha.asImage(), 100 + offset.fX, 0, SkSamplingOptions(), &paint);
-}
-
-void draw2(SkCanvas* canvas) {
-    SkBitmap alpha, bitmap;
-    bitmap.allocN32Pixels(100, 100);
-    SkCanvas offscreen(bitmap);
-    offscreen.clear(0);
-    SkPaint paint;
-    paint.setAntiAlias(true);
-    paint.setColor(SK_ColorBLUE);
-    paint.setStyle(SkPaint::kStroke_Style);
-    paint.setStrokeWidth(20);
-    offscreen.drawCircle(50, 50, 39, paint);
-    paint.setMaskFilter(SkMaskFilter::MakeBlur(kOuter_SkBlurStyle, 3));
-    SkIPoint offset;
-    bitmap.extractAlpha(&alpha, &paint, nullptr, &offset);
-
-    const SkImageInfo& alphaInfo = alpha.info();
-    spdlog::info("{}: for alpha {} bytes pre pixel, color type is {}", __func__, alphaInfo.bytesPerPixel(), 
-        static_cast<int>(alphaInfo.colorType()));   // kAlpha_8_SkColorType
-    spdlog::info("{}: offset = [.fX = {}, .fY = {}]", __func__, offset.fX, offset.fY);
-
-    paint.setColor(SK_ColorRED);
-    canvas->drawImage(bitmap.asImage(), 0, -offset.fY, SkSamplingOptions(), &paint);
-    canvas->drawImage(alpha.asImage(), 100 + offset.fX, 0, SkSamplingOptions(), &paint);
+    for (int left: {-100, 0, 100, 1000}) {
+        for (int right: {0, 100, 1000}) {
+            SkIRect b = SkIRect::MakeLTRB(left, 100, right, 200);
+            bool success = source.extractSubset(&subset, b);
+            spdlog::info("subset: {:4d}, {:4d}, {:4d}, {:4d}", b.fLeft, b.fTop, b.fRight, b.fBottom);
+            spdlog::info("success: {}", success ? "true" : "false");
+            if (success) {
+                subset.getBounds(&s);
+                spdlog::info("    subset: {}, {}, {}, {}", s.fLeft, s.fTop, s.fRight, s.fBottom);
+                std::ostringstream oos;
+                oos << "subset_" << s.fLeft << "_" << s.fTop << "_" << s.fRight << "_"  << s.fBottom << ".png";
+                saveBitmapAsPng(subset, oos.str().c_str());
+            }
+        }
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -220,7 +174,7 @@ int main(int argc, char* argv[]) {
         spdlog::error("{}: can not create type face from font manager!", __FUNCTION__);
     }
 
-    //loadPngToBitmap(pngResources[2].c_str(), source);
+    loadPngToBitmap(pngResources[2].c_str(), source);
 
     SkImageInfo imageInfo = SkImageInfo::Make(
         DRAW_WIDTH, DRAW_HEIGHT,
@@ -230,14 +184,14 @@ int main(int argc, char* argv[]) {
     SkCanvas* canvas = surface->getCanvas();
     canvas->drawColor(0xFFFFFFFF);
 
-    draw2(canvas);
+    draw(canvas);
 
-    SkBitmap bitmap;
-    bitmap.allocPixels(imageInfo, imageInfo.minRowBytes());
-    surface->readPixels(bitmap, 0, 0);
+    //SkBitmap bitmap;
+    //bitmap.allocPixels(imageInfo, imageInfo.minRowBytes());
+    //surface->readPixels(bitmap, 0, 0);
 
-    std::string pngName = generate_filename("output", "png");
-    saveBitmapAsPng(bitmap, pngName.c_str());
+    //std::string pngName = generate_filename("output", "png");
+    //saveBitmapAsPng(bitmap, pngName.c_str());
 
     return 0;
 }
