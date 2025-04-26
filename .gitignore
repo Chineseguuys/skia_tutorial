@@ -5,3 +5,4 @@ build/
 .cache/
 04_skia_clipRect/
 compile_commands.json
+display/
