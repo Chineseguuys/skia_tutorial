@@ -53,17 +53,6 @@
 static sk_sp<SkFontMgr> fontMgr;
 static sk_sp<SkTypeface> typeFace;
 static SkBitmap source;
-// for draw1
-#if 0
-static const int DRAW_WIDTH = 3008;
-static const int DRAW_HEIGHT = 2120;
-#endif
-//for draw2
-#if 0
-static const int DRAW_WIDTH = 256;
-static const int DRAW_HEIGHT = 256;
-//for draw3 
-#endif
 static const int DRAW_WIDTH = 256;
 static const int DRAW_HEIGHT = 64;
 static const std::vector<std::string> pngResources = {"../resources/example_1.png",
@@ -209,91 +198,41 @@ static void releaseProc(void* addr, void* ) {
 }
 
 void draw(SkCanvas* canvas) {
-    SkBitmap bitmap;
-    void* pixels = new uint32_t[8 * 8];
-    SkImageInfo info = SkImageInfo::MakeN32(8, 8, kOpaque_SkAlphaType);
-    SkDebugf("before installPixels\n");
-    bool installed = bitmap.installPixels(info, pixels, 8 * 4, releaseProc, nullptr);
-    SkDebugf("install " "%s" "successful\n", installed ? "" : "not ");
-    saveBitmapAsPng(bitmap, generate_filename("output_8x8", "png").c_str());
+    SkBitmap original;
+    SkImageInfo info = SkImageInfo::Make(25, 35, kRGBA_8888_SkColorType, kOpaque_SkAlphaType);
+    if (original.tryAllocPixels(info)) {
+        original.setImmutable();
+        SkBitmap copy;
+        original.extractSubset(&copy, {5, 10, 15, 20});
+        spdlog::info("original is " "{}" "immutable", original.isImmutable() ? "" : "not ");
+        spdlog::info("copy is " "{}" "immutable", copy.isImmutable() ? "" : "not ");
+    }
 }
 
+// is null
 void draw1(SkCanvas* canvas) {
-    uint32_t* launcher = nullptr;
-    uint32_t* background = nullptr;
-    bool isLoaded = loadRGBARawFile(rgbaRawResources[0].c_str(), 3008, 2120, &launcher);
-    if (!isLoaded)  return;
-
-    isLoaded = loadRGBARawFile(rgbaRawResources[1].c_str(), 3008, 2120, &background);
-    if (!isLoaded) return;
-
-    {
-        // draw wallpaper layer
-        SkBitmap bitmap;
-        SkImageInfo info = SkImageInfo::MakeN32(3008, 2120, kUnpremul_SkAlphaType);
-        bool installed = bitmap.installPixels(info, background, 3008 * 4, releaseProc, nullptr);
-        spdlog::info("install " "{}" "successful\n", installed ? "" : "not ");
-
-        sk_sp<SkImage> image = bitmap.asImage();
-        SkMatrix matrix;
-        sk_sp<SkShader> shader = image->makeShader(SkSamplingOptions(), &matrix);
-        SkPaint paint;
-        paint.setShader(shader);
-        SkRect bounds = SkRect::MakeLTRB(0, 0, 3008, 2120);
-        canvas->drawRect(bounds, paint);
-    }
-
-    {
-        // draw launcher layer
-        SkBitmap bitmap;
-        SkImageInfo info = SkImageInfo::MakeN32(3008, 2120, kUnpremul_SkAlphaType);
-        bool installed = bitmap.installPixels(info, launcher, 3008 * 4, releaseProc, nullptr);
-        SkDebugf("install " "%s" "successful\n", installed ? "" : "not ");
-
-        sk_sp<SkImage> image = bitmap.asImage();
-        SkMatrix matrix;
-        sk_sp<SkShader> shader = image->makeShader(SkSamplingOptions(), &matrix);
-        SkPaint paint;
-        paint.setShader(shader);
-        SkRect bounds = SkRect::MakeLTRB(0, 0, 3008, 2120);
-        canvas->drawRect(bounds, paint);
-    }
-}
-
-void draw2(SkCanvas* canvas) {
-    std::default_random_engine rng;
-    const auto randUint = [&rng](uint32_t min, uint32_t max) -> uint32_t {
-        return std::uniform_int_distribution<uint32_t>(min, max)(rng);
-    };
     SkBitmap bitmap;
-    const int width = 8;
-    const int height = 8;
-    uint32_t pixels[width * height];
-    for (unsigned x = 0; x < width * height; ++x) {
-       pixels[x] = randUint(0, UINT_MAX);
-    }
-    SkImageInfo info = SkImageInfo::MakeN32(width, height, kUnpremul_SkAlphaType);
-    if (bitmap.installPixels(info, pixels, info.minRowBytes())) {
-       canvas->scale(32, 32);
-       canvas->drawImage(bitmap.asImage(), 0, 0);
-    }
+    SkDebugf("empty bitmap does %shave pixels\n", bitmap.isNull() ? "not " : "");
+    bitmap.setInfo(SkImageInfo::MakeA8(8, 8));
+    SkDebugf("bitmap with dimensions does %shave pixels\n", bitmap.isNull() ? "not " : "");
+    bitmap.allocPixels();
+    SkDebugf("allocated bitmap does %shave pixels\n", bitmap.isNull() ? "not " : "");
 }
 
+// is opaque?
 void draw3(SkCanvas* canvas) {
-    uint8_t storage[][5] = {{ 0xCA, 0xDA, 0xCA, 0xC9, 0xA3 },
-                            { 0xAC, 0xA8, 0x89, 0x47, 0x87 },
-                            { 0x4B, 0x25, 0x25, 0x25, 0x46 },
-                            { 0x90, 0x81, 0x25, 0x41, 0x33 },
-                            { 0x75, 0x55, 0x44, 0x20, 0x00 }};
-    SkImageInfo imageInfo = SkImageInfo::Make(5, 5, kGray_8_SkColorType, kOpaque_SkAlphaType);
-    SkPixmap pixmap(imageInfo, storage[0], sizeof(storage) / 5);
+    const int height = 2;
+    const int width = 2;
     SkBitmap bitmap;
-    bitmap.installPixels(pixmap);
-    canvas->scale(10, 10);
-    canvas->drawImage(bitmap.asImage(), 0, 0);
-    *pixmap.writable_addr8(2, 2) = 0xFF;    // 白色
-    bitmap.installPixels(pixmap);
-    canvas->drawImage(bitmap.asImage(), 10, 0);
+    bitmap.setInfo(SkImageInfo::Make(width, height, kN32_SkColorType, kPremul_SkAlphaType));
+    for (int index = 0; index < 2; ++index) {
+        bitmap.allocPixels();
+        bitmap.eraseColor(0x00000000);
+        SkDebugf("isOpaque: %s\n", bitmap.isOpaque() ? "true" : "false");
+        bitmap.eraseColor(0xFFFFFFFF);
+        SkDebugf("isOpaque: %s\n", bitmap.isOpaque() ? "true" : "false");
+        bitmap.setInfo(bitmap.info().makeAlphaType(kOpaque_SkAlphaType));
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -333,13 +272,13 @@ int main(int argc, char* argv[]) {
     canvas->drawColor(SK_ColorTRANSPARENT);
 
     draw3(canvas);
-
+#if 0
     SkBitmap bitmap;
     bitmap.allocPixels(imageInfo, imageInfo.minRowBytes());
     surface->readPixels(bitmap, 0, 0);
 
     std::string pngName = generate_filename("output", "png");
     saveBitmapAsPng(bitmap, pngName.c_str());
-
+#endif
     return 0;
 }
