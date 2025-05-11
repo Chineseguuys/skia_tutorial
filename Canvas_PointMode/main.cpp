@@ -22,16 +22,15 @@
 
 #include "Skia/include/core/SkTextBlob.h"
 #include "Skia/include/core/SkRefCnt.h"
-#include "Skia/include/effects/SkGradientShader.h"
 
 
-#include "fmt/format.h"
 #include "Skia/include/core/SkColor.h"
-#include "Skia/include/core/SkPixmap.h"
 // added and open the SK_DEBUG for SkRefCnt.h:166: fatal error: "assertf(rc == 1): NVRefCnt was 0"
 #include "Skia/include/config/SkUserConfig.h"
 #include "Skia/include/core/SkColorSpace.h"
-#include "include/core/SkBlendMode.h"
+#include "Skia/include/core/SkPaint.h"
+#include "Skia/include/private/base/SkPoint_impl.h"
+#include "Skia/include/core/SkPath.h"
 
 #include <GL/gl.h>
 #include <GL/glx.h>
@@ -46,11 +45,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <spdlog/spdlog.h>
+#include "fmt/format.h"
 #include <iomanip>
 #include <chrono>
 #include <sstream>
 #include <string>
-#include <utility>
 #include <vector>
 
 // modified for compile error
@@ -65,8 +64,9 @@ static SkBitmap source;
 static sk_sp<SkImage> image;
 static int DRAW_WIDTH = 256;
 static int DRAW_HEIGHT = 256;
-static bool SAVE_BITMAP = false;
 static int RESOURCE_ID = 2;
+static bool SAVE_BITMAP = false;
+static bool SAVE_SKP = false;
 static const std::vector<std::string> pngResources = {"../resources/example_1.png",
     "../resources/example_2.png",
     "../resources/example_3.png",
@@ -210,80 +210,40 @@ static void releaseProc(void* addr, void* ) {
     delete[] (uint32_t*) addr;
 }
 
-void drawBG(SkCanvas* canvas) {
-    SkColor radColors[] = {0xFFFFFFFF, 0xFFFFFFFF, 0x00FFFFFF};
-    auto rad = SkGradientShader::MakeRadial(SkPoint::Make(128, 128), 128, radColors, nullptr, 3,
-                                            SkTileMode::kClamp);
-
-    SkMatrix rotMtx;
-    rotMtx.setRotate(-45, 128, 128);
-    SkColor sweepColors[] = {0xFFFF00FF, 0xFFFF0000, 0xFFFFFF00, 0xFF00FF00,
-                             0xFF00FFFF, 0xFF0000FF, 0xFFFF00FF};
-    auto sweep = SkGradientShader::MakeSweep(128, 128, sweepColors, nullptr, 7, 0, &rotMtx);
-
-    auto comp = SkShaders::Blend(SkBlendMode::kModulate, std::move(rad), std::move(sweep));
-    SkPaint p;
-    p.setShader(std::move(comp));
-
-    canvas->drawPaint(p);
+void draw(SkCanvas* canvas) {
+    SkPaint paint;
+    paint.setStyle(SkPaint::kStroke_Style);
+    paint.setStrokeWidth(10);
+    SkPoint points[] = {{64, 32}, {96, 96}, {32, 96}};
+    canvas->drawPoints(SkCanvas::kPoints_PointMode, 3, points, paint);
+    canvas->translate(128, 0);
+    canvas->drawPoints(SkCanvas::kLines_PointMode, 3, points, paint);
+    canvas->translate(0, 128);
+    canvas->drawPoints(SkCanvas::kPolygon_PointMode, 3, points, paint);
+    SkPath path;
+    path.addPoly(points, 3, false);
+    canvas->translate(-128, 0);
+    canvas->drawPath(path, paint);
 }
 
-// 256x4352
-void draw(SkCanvas* canvas) {
-    SkBlendMode blendModes[] = {
-        SkBlendMode::kDst,
-        SkBlendMode::kSrc,
-        SkBlendMode::kSrcOver,  // source + (1 - source alpha) * dst
-        SkBlendMode::kDstOver,
-        SkBlendMode::kSrcIn,
-        SkBlendMode::kDstIn,
-        SkBlendMode::kSrcOut,
-        SkBlendMode::kDstOut,
-        SkBlendMode::kSrcATop,
-        SkBlendMode::kDstATop,
-        SkBlendMode::kXor,
-        SkBlendMode::kPlus,
-        SkBlendMode::kModulate,
-        SkBlendMode::kScreen,
-        SkBlendMode::kOverlay,
-        SkBlendMode::kDarken,
-        SkBlendMode::kLighten,
-    };
+void draw1(SkCanvas* canvas) {
+    SkPaint paint;
+    paint.setStyle(SkPaint::kStroke_Style);
+    paint.setStrokeWidth(10);
+    SkPoint points[] = {{64, 32}, {96, 96}, {32, 96}, {64, 32}};
+    canvas->drawPoints(SkCanvas::kLines_PointMode, 4, points, paint);
+    canvas->translate(128, 0);
+    canvas->drawPoints(SkCanvas::kPolygon_PointMode, 4, points, paint);
 
-    SkPaint labelPaint;
-    labelPaint.setAntiAlias(true);
-    labelPaint.setColor(SK_ColorRED);
-    SkFont font(typeFace);
-
-    for (auto mode : blendModes) {
-        SkPaint layerPaint;
-        layerPaint.setBlendMode(mode);
-
-        canvas->save();
-        canvas->clipRect(SkRect::MakeWH(256, 256));
-
-        drawBG(canvas);
-        // Saves SkMatrix and clip, and allocates a SkSurface for subsequent drawing.
-        canvas->saveLayer(nullptr, &layerPaint);
-        const SkScalar r = 80;
-        SkPaint discP;
-        discP.setAntiAlias(true);
-        discP.setBlendMode(SkBlendMode::kPlus);
-        discP.setColor(SK_ColorGREEN); canvas->drawCircle(128, r, r, discP);
-        discP.setColor(SK_ColorRED);   canvas->drawCircle(r, 256 - r, r, discP);
-        discP.setColor(SK_ColorBLUE);  canvas->drawCircle(256 - r, 256 - r, r, discP);
-        canvas->restore();
-
-        canvas->drawSimpleText(SkBlendMode_Name(mode), strlen(SkBlendMode_Name(mode)),
-                               SkTextEncoding::kUTF8, 10, 10, font, labelPaint);
-        canvas->restore();
-        canvas->translate(0, 256);
-    }
+    paint.setStyle(SkPaint::kFill_Style);
+    canvas->translate(0, 128);
+    canvas->drawPoints(SkCanvas::kPolygon_PointMode, 4, points, paint);
 }
 
 int main(int argc, char* argv[]) {
 #if 1
     spdlog::set_level(spdlog::level::debug);
+    spdlog::set_pattern("[%P:%t][%Y-%m-%d %H:%M:%S.%e] [%^%-8l%$] %v");
 #endif
 
     // args parser
@@ -300,6 +260,9 @@ int main(int argc, char* argv[]) {
     app.add_option("-R,--resource", RESOURCE_ID, "resource id for program loading image")
         ->check(CLI::Range(0, 5))
         ->default_val(2);
+    app.add_option("-P,--picture", SAVE_SKP, "Save Canvas draw to skp file")
+        ->check(CLI::IsMember({0, 1}))
+        ->default_val(0);
     //catch exception and parse the command lines
     CLI11_PARSE(app, argc, argv);
 
@@ -334,12 +297,30 @@ int main(int argc, char* argv[]) {
         kOpaque_SkAlphaType);
     sk_sp<SkSurface> surface = SkSurfaces::Raster(imageInfo);
     SkCanvas* canvas = surface->getCanvas();
+
+    SkPictureRecorder recorder;
+    SkCanvas* recordingCanvas = recorder.beginRecording(DRAW_WIDTH, DRAW_HEIGHT);
+    if (SAVE_SKP) {
+        spdlog::debug("{}: replace canvas with recording canvas!", __func__);
+        canvas = recordingCanvas;
+    }
+
 #ifdef INIT_WHITEBACKGROUND
     canvas->drawColor(SK_ColorWHITE);
 #else
     canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
-    draw(canvas);
+
+    draw1(canvas);
+
+    if (SAVE_SKP) {
+        sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();
+        std::string skpFileName = generate_filename("output", "skp");
+        savePictureAsSKP(picture, skpFileName.c_str());
+
+        canvas = surface->getCanvas();
+        canvas->drawPicture(picture);
+    }
 
     if(SAVE_BITMAP) {
         SkBitmap bitmap;
