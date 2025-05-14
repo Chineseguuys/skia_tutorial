@@ -48,6 +48,8 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
+#include "include/core/SkClipOp.h"
+#include "include/core/SkPathTypes.h"
 
 #include <iomanip>
 #include <chrono>
@@ -216,88 +218,84 @@ static void releaseProc(void* addr, void* ) {
 }
 
 void draw(SkCanvas* canvas) {
-    if (canvas->accessTopLayerPixels(nullptr, nullptr)) {
-        spdlog::info("{}: accessTopLayerPixels returned true", __func__);
-         canvas->clear(SK_ColorRED);
-    } else {
-        spdlog::info("{}: accessTopLayerPixels returned false", __func__);
-         canvas->clear(SK_ColorBLUE);
-    }
+    SkPaint paint;
+    paint.setAntiAlias(true);
+    SkPath path;
+    SkFont font(typeFace, 20);
+
+    path.addRect({20, 30, 100, 110});
+    path.addRect({60, 70, 140, 150});
+    path.setFillType(SkPathFillType::kInverseWinding);
+    canvas->save();
+    canvas->clipPath(path, SkClipOp::kDifference, false);
+    canvas->drawCircle(70, 100, 60, paint);
+    canvas->restore();
+    canvas->translate(250, 250);
+    path.setFillType(SkPathFillType::kInverseWinding);
+    canvas->clipPath(path, SkClipOp::kIntersect, false);
+    canvas->drawCircle(70, 100, 60, paint);
+
+    canvas->drawString("kInverseWinding", 70, 250, font, SkPaint());
 }
 
-// Canvas_accessTopLayerPixels_b
 void draw1(SkCanvas* canvas) {
     SkPaint paint;
-    SkFont font(typeFace, 100);
-    canvas->drawString("ABC", 20, 160, font, paint);
-    SkRect layerBounds = SkRect::MakeXYWH(32, 32, 192, 192);
-    canvas->saveLayerAlpha(&layerBounds, 128);
-    canvas->clear(SK_ColorWHITE);
-    canvas->drawString("DEF", 20, 160, font, paint);
-    SkImageInfo imageInfo;
-    size_t rowBytes;
-    SkIPoint origin;
-    uint32_t* access = (uint32_t*) canvas->accessTopLayerPixels(&imageInfo, &rowBytes, &origin);
-    spdlog::info("{}: accessTopLayerPixels returnd {}", __func__, fmt::ptr(access));
-    if (access) {
-        int h = imageInfo.height();
-        int v = imageInfo.width();
-        int rowWords = rowBytes / sizeof(uint32_t);
-        spdlog::info("{}: access wxh = {}x{}, row words = {}", __func__, h, v, rowWords);
-        for (int y = 0; y < h; ++y) {
-            int newY = (y - h / 2) * 2 + h / 2;
-            if (newY < 0 || newY >= h) {
-                continue;
-            }
-            for (int x = 0; x < v; ++x) {
-                int newX = (x - v / 2) * 2 + v / 2;
-                if (newX < 0 || newX >= v) {
-                    continue;
-                }
-                if (access[y * rowWords + x] == SK_ColorBLACK) {
-                    access[newY * rowWords + newX] = SK_ColorGRAY;
-                }
-            }
-        }
-    }
+    paint.setAntiAlias(true);
+    SkPath path;
+    SkFont font(typeFace, 20);
+    path.addRect({20, 30, 100, 110});
+    path.addRect({60, 70, 140, 150});
+    path.setFillType(SkPathFillType::kWinding);
+    canvas->save();
+    canvas->clipPath(path, SkClipOp::kDifference, false);
+    canvas->drawCircle(70, 100, 60, paint);
     canvas->restore();
+    canvas->translate(250, 250);
+    path.setFillType(SkPathFillType::kWinding);
+    canvas->clipPath(path, SkClipOp::kIntersect, false);
+    canvas->drawCircle(70, 100, 60, paint);
+
+    canvas->drawString("kWinding", 70, 250, font, SkPaint());
 }
 
-// Canvas_accessTopRasterHandle
-static void deleteCallback(void*, void* context) {
-    spdlog::info("{}", __func__);
-    delete (char*) context;
+void draw2(SkCanvas* canvas) {
+    SkPaint paint;
+    paint.setAntiAlias(true);
+    SkPath path;
+    SkFont font(typeFace, 20);
+    path.addRect({20, 30, 100, 110});
+    path.addRect({60, 70, 140, 150});
+    path.setFillType(SkPathFillType::kEvenOdd);
+    canvas->save();
+    canvas->clipPath(path, SkClipOp::kDifference, false);
+    canvas->drawCircle(70, 100, 60, paint);
+    canvas->restore();
+    canvas->translate(250, 250);
+    path.setFillType(SkPathFillType::kEvenOdd);
+    canvas->clipPath(path, SkClipOp::kIntersect, false);
+    canvas->drawCircle(70, 100, 60, paint);
+
+    canvas->drawString("kEvenOdd", 70, 250, font, SkPaint());
 }
 
-class CustomAllocator : public SkRasterHandleAllocator {
-public:
-    bool allocHandle(const SkImageInfo& info, Rec* rec) override {
-        // see https://github.com/google/skia/blob/main/src/core/SkCanvas.cpp#L2955
-#ifdef PRINT_BACKTRACE
-        backward::StackTrace st;
-        st.load_here(32);
-        backward::Printer p;
-        p.print(st);
-#endif
-        char* context = new char[4]{'s', 'k', 'i', 'a'};
-        rec->fReleaseProc = deleteCallback;
-        rec->fReleaseCtx = context;
-        rec->fHandle = context;
-        rec->fPixels = context;
-        rec->fRowBytes = 4;
-        return true;
-    }
-    void updateHandle(Handle handle, const SkMatrix& ctm, const SkIRect& clip_bounds) override {
-        // apply canvas matrix and clip to custom environment
-    }
-};
+void draw3(SkCanvas* canvas) {
+    SkPaint paint;
+    paint.setAntiAlias(true);
+    SkPath path;
+    SkFont font(typeFace, 20);
+    path.addRect({20, 30, 100, 110});
+    path.addRect({60, 70, 140, 150});
+    path.setFillType(SkPathFillType::kInverseEvenOdd);
+    canvas->save();
+    canvas->clipPath(path, SkClipOp::kDifference, false);
+    canvas->drawCircle(70, 100, 60, paint);
+    canvas->restore();
+    canvas->translate(250, 250);
+    path.setFillType(SkPathFillType::kInverseEvenOdd);
+    canvas->clipPath(path, SkClipOp::kIntersect, false);
+    canvas->drawCircle(70, 100, 60, paint);
 
-void draw2(SkCanvas *canvas) {
-    const SkImageInfo info = SkImageInfo::MakeN32Premul(1, 1);
-    std::unique_ptr<SkCanvas> c2 =
-            SkRasterHandleAllocator::MakeCanvas(std::make_unique<CustomAllocator>(), info);
-    char* context = (char*) c2->accessTopRasterHandle();
-    SkDebugf("context = %.4s\n", context);
+    canvas->drawString("kInverseEvenOdd", 70, 250, font, SkPaint());
 }
 
 int main(int argc, char* argv[]) {
@@ -371,7 +369,7 @@ int main(int argc, char* argv[]) {
     canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
 
-    draw2(canvas);
+    draw3(canvas);
 
     if (SAVE_SKP) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();

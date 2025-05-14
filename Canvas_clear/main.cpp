@@ -216,88 +216,18 @@ static void releaseProc(void* addr, void* ) {
 }
 
 void draw(SkCanvas* canvas) {
-    if (canvas->accessTopLayerPixels(nullptr, nullptr)) {
-        spdlog::info("{}: accessTopLayerPixels returned true", __func__);
-         canvas->clear(SK_ColorRED);
-    } else {
-        spdlog::info("{}: accessTopLayerPixels returned false", __func__);
-         canvas->clear(SK_ColorBLUE);
-    }
-}
-
-// Canvas_accessTopLayerPixels_b
-void draw1(SkCanvas* canvas) {
-    SkPaint paint;
-    SkFont font(typeFace, 100);
-    canvas->drawString("ABC", 20, 160, font, paint);
-    SkRect layerBounds = SkRect::MakeXYWH(32, 32, 192, 192);
-    canvas->saveLayerAlpha(&layerBounds, 128);
-    canvas->clear(SK_ColorWHITE);
-    canvas->drawString("DEF", 20, 160, font, paint);
-    SkImageInfo imageInfo;
-    size_t rowBytes;
-    SkIPoint origin;
-    uint32_t* access = (uint32_t*) canvas->accessTopLayerPixels(&imageInfo, &rowBytes, &origin);
-    spdlog::info("{}: accessTopLayerPixels returnd {}", __func__, fmt::ptr(access));
-    if (access) {
-        int h = imageInfo.height();
-        int v = imageInfo.width();
-        int rowWords = rowBytes / sizeof(uint32_t);
-        spdlog::info("{}: access wxh = {}x{}, row words = {}", __func__, h, v, rowWords);
-        for (int y = 0; y < h; ++y) {
-            int newY = (y - h / 2) * 2 + h / 2;
-            if (newY < 0 || newY >= h) {
-                continue;
-            }
-            for (int x = 0; x < v; ++x) {
-                int newX = (x - v / 2) * 2 + v / 2;
-                if (newX < 0 || newX >= v) {
-                    continue;
-                }
-                if (access[y * rowWords + x] == SK_ColorBLACK) {
-                    access[newY * rowWords + newX] = SK_ColorGRAY;
-                }
-            }
-        }
-    }
+    canvas->save();
+    canvas->clipRect(SkRect::MakeWH(256, 128));
+    //  0x80ff0000
+    canvas->clear(SkColorSetARGB(0x80, 0xFF, 0x00, 0x00));
     canvas->restore();
-}
-
-// Canvas_accessTopRasterHandle
-static void deleteCallback(void*, void* context) {
-    spdlog::info("{}", __func__);
-    delete (char*) context;
-}
-
-class CustomAllocator : public SkRasterHandleAllocator {
-public:
-    bool allocHandle(const SkImageInfo& info, Rec* rec) override {
-        // see https://github.com/google/skia/blob/main/src/core/SkCanvas.cpp#L2955
-#ifdef PRINT_BACKTRACE
-        backward::StackTrace st;
-        st.load_here(32);
-        backward::Printer p;
-        p.print(st);
-#endif
-        char* context = new char[4]{'s', 'k', 'i', 'a'};
-        rec->fReleaseProc = deleteCallback;
-        rec->fReleaseCtx = context;
-        rec->fHandle = context;
-        rec->fPixels = context;
-        rec->fRowBytes = 4;
-        return true;
-    }
-    void updateHandle(Handle handle, const SkMatrix& ctm, const SkIRect& clip_bounds) override {
-        // apply canvas matrix and clip to custom environment
-    }
-};
-
-void draw2(SkCanvas *canvas) {
-    const SkImageInfo info = SkImageInfo::MakeN32Premul(1, 1);
-    std::unique_ptr<SkCanvas> c2 =
-            SkRasterHandleAllocator::MakeCanvas(std::make_unique<CustomAllocator>(), info);
-    char* context = (char*) c2->accessTopRasterHandle();
-    SkDebugf("context = %.4s\n", context);
+    canvas->save();
+    canvas->clipRect(SkRect::MakeWH(150, 192));
+    // 0x8000ff00
+    canvas->clear(SkColorSetARGB(0x80, 0x00, 0xFF, 0x00));
+    canvas->restore();
+    canvas->clipRect(SkRect::MakeWH(75, 256));
+    canvas->clear(SkColorSetARGB(0x80, 0x00, 0x00, 0xFF));
 }
 
 int main(int argc, char* argv[]) {
@@ -371,7 +301,7 @@ int main(int argc, char* argv[]) {
     canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
 
-    draw2(canvas);
+    draw(canvas);
 
     if (SAVE_SKP) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();
