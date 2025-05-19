@@ -30,9 +30,10 @@
 #include "Skia/include/core/SkColorSpace.h"
 #include "Skia/include/core/SkPaint.h"
 #include "Skia/include/core/SkPath.h"
-#include "Skia/include/effects/SkImageFilters.h"
-#include "Skia/include/core/SkRect.h"
 #include "Skia/include/core/SkFont.h"
+#include "Skia/include/core/SkClipOp.h"
+#include "Skia/include/core/SkRRect.h"
+#include "Skia/include/core/SkRegion.h"
 
 #include <GL/gl.h>
 #include <GL/glx.h>
@@ -48,8 +49,6 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
-#include "include/core/SkClipOp.h"
-#include "include/core/SkPathTypes.h"
 
 #include <iomanip>
 #include <chrono>
@@ -64,6 +63,8 @@
 #endif
 
 #include "backward.hpp"
+
+#define DRAW_NO(_number) draw##_number
 
 static sk_sp<SkFontMgr> fontMgr;
 static sk_sp<SkTypeface> typeFace;
@@ -217,153 +218,22 @@ static void releaseProc(void* addr, void* ) {
     delete[] (uint32_t*) addr;
 }
 
-void draw(SkCanvas* canvas) {
+void draw0(SkCanvas* canvas) {
     SkPaint paint;
     paint.setAntiAlias(true);
-    SkPath path;
-    SkFont font(typeFace, 20);
-
-    path.addRect({20, 30, 100, 110});
-    path.addRect({60, 70, 140, 150});
-    path.setFillType(SkPathFillType::kInverseWinding);
+    SkIRect iRect = {30, 40, 120, 130 };
+    SkRegion region(iRect);
+    canvas->rotate(10);
+    canvas->translate(30, 30);
     canvas->save();
-    canvas->clipPath(path, SkClipOp::kDifference, false);
-    canvas->drawCircle(70, 100, 60, paint);
-    canvas->restore();
-    canvas->translate(250, 250);
-    path.setFillType(SkPathFillType::kInverseWinding);
-    canvas->clipPath(path, SkClipOp::kIntersect, false);
-    canvas->drawCircle(70, 100, 60, paint);
-
-    canvas->drawString("kInverseWinding", 70, 250, font, SkPaint());
-}
-
-void draw1(SkCanvas* canvas) {
-    SkPaint paint;
-    paint.setAntiAlias(true);
-    SkPath path;
-    SkFont font(typeFace, 20);
-    path.addRect({20, 30, 100, 110});
-    path.addRect({60, 70, 140, 150});
-    path.setFillType(SkPathFillType::kWinding);
-    canvas->save();
-    canvas->clipPath(path, SkClipOp::kDifference, false);
-    canvas->drawCircle(70, 100, 60, paint);
-    canvas->restore();
-    canvas->translate(250, 250);
-    path.setFillType(SkPathFillType::kWinding);
-    canvas->clipPath(path, SkClipOp::kIntersect, false);
-    canvas->drawCircle(70, 100, 60, paint);
-
-    canvas->drawString("kWinding", 70, 250, font, SkPaint());
-}
-
-void draw2(SkCanvas* canvas) {
-    SkPaint paint;
-    paint.setAntiAlias(true);
-    SkPath path;
-    SkFont font(typeFace, 20);
-    path.addRect({20, 30, 100, 110});
-    path.addRect({60, 70, 140, 150});
-    path.setFillType(SkPathFillType::kEvenOdd);
-    canvas->save();
-    canvas->clipPath(path, SkClipOp::kDifference, false);
-    canvas->drawCircle(70, 100, 60, paint);
-    canvas->restore();
-    canvas->translate(250, 250);
-    path.setFillType(SkPathFillType::kEvenOdd);
-    canvas->clipPath(path, SkClipOp::kIntersect, false);
-    canvas->drawCircle(70, 100, 60, paint);
-
-    canvas->drawString("kEvenOdd", 70, 250, font, SkPaint());
-}
-
-void draw3(SkCanvas* canvas) {
-    SkPaint paint;
-    paint.setAntiAlias(true);
-    SkPath path;
-    SkFont font(typeFace, 20);
-    path.addRect({20, 30, 100, 110});
-    path.addRect({60, 70, 140, 150});
-    path.setFillType(SkPathFillType::kInverseEvenOdd);
-    canvas->save();
-    canvas->clipPath(path, SkClipOp::kDifference, false);
-    canvas->drawCircle(70, 100, 60, paint);
-    canvas->restore();
-    canvas->translate(250, 250);
-    path.setFillType(SkPathFillType::kInverseEvenOdd);
-    canvas->clipPath(path, SkClipOp::kIntersect, false);
-    canvas->drawCircle(70, 100, 60, paint);
-
-    canvas->drawString("kInverseEvenOdd", 70, 250, font, SkPaint());
-}
-
-// Canvas_clipPath_3
-void draw4(SkCanvas* canvas) {
-    SkPaint paint;
-    paint.setAntiAlias(true);
-    SkPath path;
-    SkPoint poly[] = {{20, 20}, { 80, 20}, { 80,  80}, {40,  80},
-                      {40, 40}, {100, 40}, {100, 100}, {20, 100}};
-    path.addPoly(poly, std::size(poly), true);
-    path.setFillType(SkPathFillType::kWinding);
-    canvas->save();
-    canvas->clipPath(path, SkClipOp::kIntersect);
+    // clipRegion 不受全局的 translate 和 rotate 的影响
+    canvas->clipRegion(region, SkClipOp::kIntersect);
     canvas->drawCircle(50, 50, 45, paint);
     canvas->restore();
     canvas->translate(100, 100);
-    path.setFillType(SkPathFillType::kEvenOdd);
-    canvas->clipPath(path, SkClipOp::kIntersect);
+    // clipRect 受到 translate 和 rotate 的影响
+    canvas->clipRect(SkRect::Make(iRect), SkClipOp::kIntersect);
     canvas->drawCircle(50, 50, 45, paint);
-}
-
-void draw5(SkCanvas* canvas) {
-    SkPaint paint;
-    paint.setAntiAlias(true);
-    SkPath path;
-    SkPoint poly[] = {{20, 20}, { 80, 20}, { 80,  80}, {40,  80},
-                      {40, 40}, {100, 40}, {100, 100}, {20, 100}};
-    path.addPoly(poly, std::size(poly), true);
-    path.setFillType(SkPathFillType::kInverseWinding);
-    canvas->save();
-    canvas->clipPath(path, SkClipOp::kIntersect);
-    canvas->drawCircle(50, 50, 45, paint);
-    canvas->restore();
-    canvas->translate(100, 100);
-    path.setFillType(SkPathFillType::kInverseEvenOdd);
-    canvas->clipPath(path, SkClipOp::kIntersect);
-    canvas->drawCircle(50, 50, 45, paint);
-}
-
-void draw6(SkCanvas* canvas) {
-    SkPaint paint;
-    paint.setAntiAlias(true);
-    SkPath path;
-    SkPoint poly[] = {{20, 20}, { 80, 20}, { 80,  80}, {40,  80},
-                      {40, 40}, {100, 40}, {100, 100}, {20, 100}};
-    path.addPoly(poly, std::size(poly), true);
-    path.setFillType(SkPathFillType::kInverseWinding);
-    canvas->save();
-    canvas->clipPath(path, SkClipOp::kDifference);
-    canvas->drawCircle(50, 50, 45, paint);
-    canvas->restore();
-    canvas->translate(100, 100);
-    path.setFillType(SkPathFillType::kInverseEvenOdd);
-    canvas->clipPath(path, SkClipOp::kDifference);
-    canvas->drawCircle(50, 50, 45, paint);
-}
-
-void draw7(SkCanvas* canvas) {
-    SkPaint paint;
-    paint.setAntiAlias(true);
-    SkPath path;
-    path.addOval({50, 50, 150, 150}, SkPathDirection::kCW);
-    path.addOval({75, 75, 125, 125}, SkPathDirection::kCCW);
-    path.setFillType(SkPathFillType::kWinding);
-    canvas->save();
-    canvas->clipPath(path, SkClipOp::kIntersect);
-    canvas->drawRect({0, 0, 200, 200}, paint);
-    canvas->restore();
 }
 
 int main(int argc, char* argv[]) {
@@ -437,7 +307,7 @@ int main(int argc, char* argv[]) {
     canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
 
-    draw7(canvas);
+   DRAW_NO(0)(canvas);
 
     if (SAVE_SKP) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();
