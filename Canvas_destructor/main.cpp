@@ -219,51 +219,20 @@ static void releaseProc(void* addr, void* ) {
     delete[] (uint32_t*) addr;
 }
 
-void draw0(SkCanvas* ) {
+void draw0(SkCanvas* canvas) {
     SkBitmap bitmap;
-    // create a bitmap 5 wide and 11 high
-    bitmap.allocPixels(SkImageInfo::MakeN32Premul(5, 11));
-    SkCanvas canvas(bitmap, SkSurfaceProps(0, kUnknown_SkPixelGeometry));
-    canvas.clear(SK_ColorWHITE);  // white is Unpremultiplied, in ARGB order
-    SkPixmap pixmap;  // provides guaranteed access to the drawn pixels
-    if (!canvas.peekPixels(&pixmap)) {
-        SkDebugf("peekPixels should never fail.\n");
+    bitmap.allocPixels(SkImageInfo::MakeN32Premul(200, 200));
+    {
+        SkCanvas offscreen(bitmap);
+        SkPaint paint;
+        SkFont font(typeFace, 100);
+        offscreen.drawString("ABC", 20, 160, font, paint);
+        SkRect layerBounds = SkRect::MakeXYWH(32, 32, 192, 192);
+        offscreen.saveLayerAlpha(&layerBounds, 128);
+        offscreen.clear(SK_ColorWHITE);
+        offscreen.drawString("DEF", 20, 160, font, paint);
     }
-    const SkPMColor* pixels = pixmap.addr32();  // points to top-left of bitmap
-    SkPMColor pmWhite = pixels[0];  // the Premultiplied format may vary
-    SkPaint paint;  // by default, draws black, 12 point text
-    SkFont font = SkFont(typeFace);
-    canvas.drawString("!", 1, 10, font, paint);  // 1 char at baseline (1, 10)
-    for (int y = 0; y < bitmap.height(); ++y) {
-        for (int x = 0; x < bitmap.width(); ++x) {
-            SkDebugf("%c", *pixels++ == pmWhite ? '-' : 'x');
-        }
-        SkDebugf("\n");
-    }
-}
-
-// https://fiddle.skia.org/c/@Canvas_copy_const_SkBitmap
-void draw1(SkCanvas* _) {
-    SkBitmap bitmap;
-    // create a bitmap 5 wide and 11 high
-    bitmap.allocPixels(SkImageInfo::MakeN32Premul(5, 11));
-    SkCanvas canvas(bitmap);
-    canvas.clear(SK_ColorWHITE);  // white is Unpremultiplied, in ARGB order
-    SkPixmap pixmap;  // provides guaranteed access to the drawn pixels
-    if (!canvas.peekPixels(&pixmap)) {
-        SkDebugf("peekPixels should never fail.\n");
-    }
-    const SkPMColor* pixels = pixmap.addr32();  // points to top-left of bitmap
-    SkPMColor pmWhite = pixels[0];  // the Premultiplied format may vary
-    SkPaint paint;  // by default, draws black, 12 point text
-    SkFont font = SkFont(fontMgr->matchFamilyStyle(nullptr, {}));
-    canvas.drawString("!", 1, 10, font, paint);  // 1 char at baseline (1, 10)
-    for (int y = 0; y < bitmap.height(); ++y) {
-        for (int x = 0; x < bitmap.width(); ++x) {
-            SkDebugf("%c", *pixels++ == pmWhite ? '-' : 'x');
-        }
-        SkDebugf("\n");
-    }
+    canvas->drawImage(bitmap.asImage(), 0, 0);
 }
 
 int main(int argc, char* argv[]) {

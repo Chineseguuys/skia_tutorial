@@ -21,6 +21,8 @@
 #include "Skia/include/core/SkImage.h"
 
 #include "Skia/include/core/SkTextBlob.h"
+#include "Skia/include/core/SkPathEffect.h"
+#include "Skia/include/effects/SkDashPathEffect.h"
 #include "Skia/include/core/SkRefCnt.h"
 
 
@@ -31,9 +33,7 @@
 #include "Skia/include/core/SkPaint.h"
 #include "Skia/include/core/SkPath.h"
 #include "Skia/include/core/SkFont.h"
-#include "Skia/include/core/SkClipOp.h"
 #include "Skia/include/core/SkRRect.h"
-#include "Skia/include/core/SkRegion.h"
 
 #include <GL/gl.h>
 #include <GL/glx.h>
@@ -49,7 +49,6 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
-#include "include/core/SkMatrix.h"
 
 #include <iomanip>
 #include <chrono>
@@ -219,50 +218,36 @@ static void releaseProc(void* addr, void* ) {
     delete[] (uint32_t*) addr;
 }
 
-void draw0(SkCanvas* ) {
-    SkBitmap bitmap;
-    // create a bitmap 5 wide and 11 high
-    bitmap.allocPixels(SkImageInfo::MakeN32Premul(5, 11));
-    SkCanvas canvas(bitmap, SkSurfaceProps(0, kUnknown_SkPixelGeometry));
-    canvas.clear(SK_ColorWHITE);  // white is Unpremultiplied, in ARGB order
-    SkPixmap pixmap;  // provides guaranteed access to the drawn pixels
-    if (!canvas.peekPixels(&pixmap)) {
-        SkDebugf("peekPixels should never fail.\n");
-    }
-    const SkPMColor* pixels = pixmap.addr32();  // points to top-left of bitmap
-    SkPMColor pmWhite = pixels[0];  // the Premultiplied format may vary
-    SkPaint paint;  // by default, draws black, 12 point text
-    SkFont font = SkFont(typeFace);
-    canvas.drawString("!", 1, 10, font, paint);  // 1 char at baseline (1, 10)
-    for (int y = 0; y < bitmap.height(); ++y) {
-        for (int x = 0; x < bitmap.width(); ++x) {
-            SkDebugf("%c", *pixels++ == pmWhite ? '-' : 'x');
+// https://fiddle.skia.org/c/@Canvas_drawArc_a
+void draw0(SkCanvas* canvas) {
+    SkPaint paint;
+    paint.setAntiAlias(true);
+    SkRect oval = { 4, 4, 60, 60};
+    for (auto useCenter : { false, true } ) {
+        for (auto style : { SkPaint::kFill_Style, SkPaint::kStroke_Style } ) {
+            paint.setStyle(style);
+            for (auto degrees : { 45, 90, 180, 360} ) {
+                canvas->drawArc(oval, 0, degrees , useCenter, paint);
+                canvas->translate(64, 0);
+            }
+            canvas->translate(-256, 64);
         }
-        SkDebugf("\n");
     }
 }
 
-// https://fiddle.skia.org/c/@Canvas_copy_const_SkBitmap
-void draw1(SkCanvas* _) {
-    SkBitmap bitmap;
-    // create a bitmap 5 wide and 11 high
-    bitmap.allocPixels(SkImageInfo::MakeN32Premul(5, 11));
-    SkCanvas canvas(bitmap);
-    canvas.clear(SK_ColorWHITE);  // white is Unpremultiplied, in ARGB order
-    SkPixmap pixmap;  // provides guaranteed access to the drawn pixels
-    if (!canvas.peekPixels(&pixmap)) {
-        SkDebugf("peekPixels should never fail.\n");
-    }
-    const SkPMColor* pixels = pixmap.addr32();  // points to top-left of bitmap
-    SkPMColor pmWhite = pixels[0];  // the Premultiplied format may vary
-    SkPaint paint;  // by default, draws black, 12 point text
-    SkFont font = SkFont(fontMgr->matchFamilyStyle(nullptr, {}));
-    canvas.drawString("!", 1, 10, font, paint);  // 1 char at baseline (1, 10)
-    for (int y = 0; y < bitmap.height(); ++y) {
-        for (int x = 0; x < bitmap.width(); ++x) {
-            SkDebugf("%c", *pixels++ == pmWhite ? '-' : 'x');
-        }
-        SkDebugf("\n");
+// https://fiddle.skia.org/c/@Canvas_drawArc_b
+void draw1(SkCanvas* canvas) {
+    SkPaint paint;
+    paint.setAntiAlias(true);
+    paint.setStyle(SkPaint::kStroke_Style);
+    paint.setStrokeWidth(4);
+    SkRect oval = { 4, 4, 60, 60};
+    float intervals[] = { 5, 5 };
+    // 将绘制的线虚线化
+    paint.setPathEffect(SkDashPathEffect::Make(intervals, 2, 2.5f));
+    for (auto degrees : { 270, 360, 540, 720, 3600 } ) {
+        canvas->drawArc(oval, 0, degrees, false, paint);
+        canvas->translate(64, 0);
     }
 }
 
@@ -337,7 +322,7 @@ int main(int argc, char* argv[]) {
     canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
 
-   DRAW_NO(0)(canvas);
+   DRAW_NO(1)(canvas);
 
     if (SAVE_SKP) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();

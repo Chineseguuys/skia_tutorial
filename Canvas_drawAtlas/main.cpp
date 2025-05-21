@@ -21,6 +21,8 @@
 #include "Skia/include/core/SkImage.h"
 
 #include "Skia/include/core/SkTextBlob.h"
+#include "Skia/include/core/SkPathEffect.h"
+#include "Skia/include/core/SkRSXform.h"
 #include "Skia/include/core/SkRefCnt.h"
 
 
@@ -31,9 +33,7 @@
 #include "Skia/include/core/SkPaint.h"
 #include "Skia/include/core/SkPath.h"
 #include "Skia/include/core/SkFont.h"
-#include "Skia/include/core/SkClipOp.h"
 #include "Skia/include/core/SkRRect.h"
-#include "Skia/include/core/SkRegion.h"
 
 #include <GL/gl.h>
 #include <GL/glx.h>
@@ -49,7 +49,6 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
-#include "include/core/SkMatrix.h"
 
 #include <iomanip>
 #include <chrono>
@@ -219,51 +218,23 @@ static void releaseProc(void* addr, void* ) {
     delete[] (uint32_t*) addr;
 }
 
-void draw0(SkCanvas* ) {
-    SkBitmap bitmap;
-    // create a bitmap 5 wide and 11 high
-    bitmap.allocPixels(SkImageInfo::MakeN32Premul(5, 11));
-    SkCanvas canvas(bitmap, SkSurfaceProps(0, kUnknown_SkPixelGeometry));
-    canvas.clear(SK_ColorWHITE);  // white is Unpremultiplied, in ARGB order
-    SkPixmap pixmap;  // provides guaranteed access to the drawn pixels
-    if (!canvas.peekPixels(&pixmap)) {
-        SkDebugf("peekPixels should never fail.\n");
-    }
-    const SkPMColor* pixels = pixmap.addr32();  // points to top-left of bitmap
-    SkPMColor pmWhite = pixels[0];  // the Premultiplied format may vary
-    SkPaint paint;  // by default, draws black, 12 point text
-    SkFont font = SkFont(typeFace);
-    canvas.drawString("!", 1, 10, font, paint);  // 1 char at baseline (1, 10)
-    for (int y = 0; y < bitmap.height(); ++y) {
-        for (int x = 0; x < bitmap.width(); ++x) {
-            SkDebugf("%c", *pixels++ == pmWhite ? '-' : 'x');
-        }
-        SkDebugf("\n");
-    }
-}
-
-// https://fiddle.skia.org/c/@Canvas_copy_const_SkBitmap
-void draw1(SkCanvas* _) {
-    SkBitmap bitmap;
-    // create a bitmap 5 wide and 11 high
-    bitmap.allocPixels(SkImageInfo::MakeN32Premul(5, 11));
-    SkCanvas canvas(bitmap);
-    canvas.clear(SK_ColorWHITE);  // white is Unpremultiplied, in ARGB order
-    SkPixmap pixmap;  // provides guaranteed access to the drawn pixels
-    if (!canvas.peekPixels(&pixmap)) {
-        SkDebugf("peekPixels should never fail.\n");
-    }
-    const SkPMColor* pixels = pixmap.addr32();  // points to top-left of bitmap
-    SkPMColor pmWhite = pixels[0];  // the Premultiplied format may vary
-    SkPaint paint;  // by default, draws black, 12 point text
-    SkFont font = SkFont(fontMgr->matchFamilyStyle(nullptr, {}));
-    canvas.drawString("!", 1, 10, font, paint);  // 1 char at baseline (1, 10)
-    for (int y = 0; y < bitmap.height(); ++y) {
-        for (int x = 0; x < bitmap.width(); ++x) {
-            SkDebugf("%c", *pixels++ == pmWhite ? '-' : 'x');
-        }
-        SkDebugf("\n");
-    }
+// https://fiddle.skia.org/c/@Canvas_drawAtlas
+void draw0(SkCanvas* canvas) {
+    // SkBitmap source = mandrill;
+    /**
+    *  A compressed form of a rotation+scale matrix.
+    *
+    *  [ fSCos     -fSSin    fTx ]
+    *  [ fSSin      fSCos    fTy ]
+    *  [     0          0      1 ]
+    */
+    SkRSXform xforms[] = { { .5f, 0, 0, 0 }, {0, .5f, 200, 100 } };
+    SkRect tex[] = { { 0, 0, 250, 250 }, { 0, 0, 250, 250 } };
+    SkColor colors[] = { 0x7f55aa00, 0x7f3333bf };
+    const SkImage* imagePtr = image.get();
+    SkSamplingOptions sampling;
+    canvas->drawAtlas(imagePtr, xforms, tex, colors, 2, SkBlendMode::kSrcOver,
+                        sampling, nullptr, nullptr);
 }
 
 int main(int argc, char* argv[]) {
