@@ -22,7 +22,6 @@
 
 #include "Skia/include/core/SkTextBlob.h"
 #include "Skia/include/core/SkPathEffect.h"
-#include "Skia/include/core/SkRSXform.h"
 #include "Skia/include/core/SkRefCnt.h"
 
 
@@ -34,14 +33,15 @@
 #include "Skia/include/core/SkPath.h"
 #include "Skia/include/core/SkFont.h"
 #include "Skia/include/core/SkRRect.h"
+#include "Skia/include/core/SkMaskFilter.h"
+#include "Skia/include/core/SkDrawable.h"
+#include "Skia/include/effects/SkGradientShader.h"
 
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <GL/glu.h>
 
 #include <X11/X.h>
-#include <climits>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -49,7 +49,6 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
-#include "include/core/SkBlendMode.h"
 #include "include/core/SkSamplingOptions.h"
 
 #include <iomanip>
@@ -74,7 +73,7 @@ static SkBitmap source;
 static sk_sp<SkImage> image;
 static int DRAW_WIDTH = 256;
 static int DRAW_HEIGHT = 256;
-static int RESOURCE_ID = 2;
+static int RESOURCE_ID = 3;
 static bool SAVE_BITMAP = false;
 static bool SAVE_SKP = false;
 static const std::vector<std::string> pngResources = {"../resources/example_1.png",
@@ -220,34 +219,100 @@ static void releaseProc(void* addr, void* ) {
     delete[] (uint32_t*) addr;
 }
 
-// https://fiddle.skia.org/c/@Canvas_drawAtlas
+// https://fiddle.skia.org/c/@Canvas_drawLine
 void draw0(SkCanvas* canvas) {
-    // SkBitmap source = mandrill;
-    /**
-    *  A compressed form of a rotation+scale matrix.
-    *
-    *  [ fSCos     -fSSin    fTx ]
-    *  [ fSSin      fSCos    fTy ]
-    *  [     0          0      1 ]
-    */
-    SkRSXform xforms[] = { { .5f, 0, 0, 0 }, {0, .5f, 200, 100 } };
-    SkRect tex[] = { { 0, 0, 250, 250 }, { 0, 0, 250, 250 } };
-    SkColor colors[] = { 0x7f55aa00, 0x7f3333bf };
-    const SkImage* imagePtr = image.get();
-    SkSamplingOptions sampling;
-    canvas->drawAtlas(imagePtr, xforms, tex, colors, 2, SkBlendMode::kSrcOver,
-                        sampling, nullptr, nullptr);
+    SkPaint paint;
+    paint.setAntiAlias(true);
+    paint.setColor(0xFF9a67be);
+    paint.setStrokeWidth(20);
+    // 向右侧进行倾斜
+    canvas->skew(1, 0);
+    canvas->drawLine(32, 96, 32, 160, paint);
+    // 向左侧进行倾斜
+    canvas->skew(-2, 0);
+    canvas->drawLine(288, 96, 288, 160, paint);
 }
 
-// https://fiddle.skia.org/c/@Canvas_drawAtlas_2
-void draw1(SkCanvas* canvas) {
-    SkRSXform xforms[] = {{.5f, 0, 0, 0}, {0, .5f, 200, 100}};
-    SkRect tex[] = {{0, 0, 250, 250}, {0, 0, 250, 250}};
-    SkColor colors[] = {0x7f55aa00, 0x7f3333bf};
+// https://fiddle.skia.org/c/@Canvas_drawLine_2
+void draw1(SkCanvas *canvas) {
     SkPaint paint;
-    paint.setAlpha(127);
-    SkSamplingOptions sampling;
-    canvas->drawAtlas(image.get(), xforms, tex, colors, 2, SkBlendMode::kPlus, sampling, nullptr, &paint);
+    paint.setAntiAlias(true);
+    paint.setColor(0xFF9a67be);
+    paint.setStrokeWidth(20);
+    canvas->skew(1, 0);
+    canvas->drawLine({32, 96}, {32, 160}, paint);
+    canvas->skew(-2, 0);
+    canvas->drawLine({288, 96}, {288, 160}, paint);
+}
+
+// https://fiddle.skia.org/c/@Canvas_drawOval
+void draw2(SkCanvas *canvas) {
+    canvas->clear(0xFF3f5f9f);
+    SkColor  kColor1 = SkColorSetARGB(0xff, 0xff, 0x7f, 0);
+    SkColor  g1Colors[] = { kColor1, SkColorSetA(kColor1, 0x20) };
+    SkPoint  g1Points[] = { { 0, 0 }, { 0, 35 } };
+    SkScalar pos[] = { 0.2f, 1.0f };
+    SkRect bounds = SkRect::MakeWH(80, 70);
+    SkPaint paint;
+    paint.setAntiAlias(true);
+    paint.setShader(SkGradientShader::MakeLinear(g1Points, g1Colors, pos, std::size(g1Colors),
+            SkTileMode::kClamp));
+    canvas->drawOval(bounds , paint);
+}
+
+// https://fiddle.skia.org/c/@Canvas_drawPaint
+void draw3(SkCanvas *canvas) {
+    SkColor     colors[] = { SK_ColorRED, SK_ColorGREEN, SK_ColorBLUE };
+    SkScalar    pos[] = { 0, SK_Scalar1/2, SK_Scalar1 };
+    SkPaint     paint;
+    paint.setShader(SkGradientShader::MakeSweep(128, 128, colors, pos, std::size(colors)));
+    canvas->drawPaint(paint);
+}
+
+// https://fiddle.skia.org/c/@Canvas_drawPatch
+void draw4(SkCanvas *canvas) {
+    // SkBitmap source = cmbkygk;
+    SkPaint paint;
+    paint.setAntiAlias(true);
+    /**
+        曲线((1-t)^(3) x(A0)+3 (1-t)^(2) t x(A10)+3 (1-t) t^(2) x(A11)+t^(3) x(A9),(1-t)^(3) y(A0)+3 (1-t)^(2) t y(A10)+3 (1-t) t^(2) y(A11)+t^(3) y(A9),t,0,1)
+        曲线((1-t)^(3) x(A0)+3 (1-t)^(2) t x(A2)+3 (1-t) t^(2) x(A1)+t^(3) x(A3),(1-t)^(3) y(A0)+3 (1-t)^(2) t y(A2)+3 (1-t) t^(2) y(A1)+t^(3) y(A3),t,0,1)
+        曲线((1-t)^(3) x(A3)+3 (1-t)^(2) t x(A5)+3 (1-t) t^(2) x(A4)+t^(3) x(A6),(1-t)^(3) y(A3)+3 (1-t)^(2) t y(A5)+3 (1-t) t^(2) y(A4)+t^(3) y(A6),t,0,1)
+        曲线((1-t)^(3) x(A6)+3 (1-t)^(2) t x(A8)+3 (1-t) t^(2) x(A7)+t^(3) x(A9),(1-t)^(3) y(A6)+3 (1-t)^(2) t y(A8)+3 (1-t) t^(2) y(A7)+t^(3) y(A9),t,0,1)
+     */
+    SkPoint cubics[] = { { 3, 1 },    { 4, 2 }, { 5, 1 },    { 7, 3 },
+                      /* { 7, 3 }, */ { 6, 4 }, { 7, 5 },    { 5, 7 },
+                      /* { 5, 7 }, */ { 4, 6 }, { 3, 7 },    { 1, 5 },
+                      /* { 1, 5 }, */ { 2, 4 }, { 1, 3 }, /* { 3, 1 } */ };
+    SkColor colors[] = { 0xbfff0000, 0xbf0000ff, 0xbfff00ff, 0xbf00ffff };
+    SkPoint texCoords[] = { { -30, -30 }, { 162, -30}, { 162, 162}, { -30, 162} };
+    paint.setShader(source.makeShader(SkSamplingOptions(SkCubicResampler::Mitchell())));
+    canvas->scale(15, 15);
+    for (auto blend : { SkBlendMode::kSrcOver, SkBlendMode::kModulate, SkBlendMode::kXor } ) {
+        canvas->drawPatch(cubics, colors, texCoords, blend, paint);
+        canvas->translate(4, 4);
+    }
+}
+
+// https://fiddle.skia.org/c/@Canvas_drawPatch_2_b
+void draw5(SkCanvas *canvas) {
+    // SkBitmap source = checkerboard;
+    SkPaint paint;
+    paint.setAntiAlias(true);
+    /**
+        曲线((1-t)^(3) x(A0)+3 (1-t)^(2) t x(A10)+3 (1-t) t^(2) x(A11)+t^(3) x(A9),(1-t)^(3) y(A0)+3 (1-t)^(2) t y(A10)+3 (1-t) t^(2) y(A11)+t^(3) y(A9),t,0,1)
+        曲线((1-t)^(3) x(A0)+3 (1-t)^(2) t x(A2)+3 (1-t) t^(2) x(A1)+t^(3) x(A3),(1-t)^(3) y(A0)+3 (1-t)^(2) t y(A2)+3 (1-t) t^(2) y(A1)+t^(3) y(A3),t,0,1)
+        曲线((1-t)^(3) x(A3)+3 (1-t)^(2) t x(A5)+3 (1-t) t^(2) x(A4)+t^(3) x(A6),(1-t)^(3) y(A3)+3 (1-t)^(2) t y(A5)+3 (1-t) t^(2) y(A4)+t^(3) y(A6),t,0,1)
+        曲线((1-t)^(3) x(A6)+3 (1-t)^(2) t x(A8)+3 (1-t) t^(2) x(A7)+t^(3) x(A9),(1-t)^(3) y(A6)+3 (1-t)^(2) t y(A8)+3 (1-t) t^(2) y(A7)+t^(3) y(A9),t,0,1)
+     */
+    SkPoint cubics[] = { { 3, 1 },    { 4, 2 }, { 5, 1 },    { 7, 3 },
+                      /* { 7, 3 }, */ { 6, 4 }, { 7, 5 },    { 5, 7 },
+                      /* { 5, 7 }, */ { 4, 6 }, { 3, 7 },    { 1, 5 },
+                      /* { 1, 5 }, */ { 2, 4 }, { 1, 3 }, /* { 3, 1 } */ };
+    SkPoint texCoords[] = { { 0, 0 }, { 0, 63}, { 63, 63}, { 63, 0 } };
+    paint.setShader(source.makeShader(SkSamplingOptions(SkFilterMode::kLinear)));
+    canvas->scale(30, 30);
+    canvas->drawPatch(cubics, nullptr, texCoords, SkBlendMode::kModulate, paint);
 }
 
 int main(int argc, char* argv[]) {
@@ -321,7 +386,7 @@ int main(int argc, char* argv[]) {
     canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
 
-   DRAW_NO(1)(canvas);
+   DRAW_NO(5)(canvas);
 
     if (SAVE_SKP) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();

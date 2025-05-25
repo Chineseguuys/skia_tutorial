@@ -22,7 +22,6 @@
 
 #include "Skia/include/core/SkTextBlob.h"
 #include "Skia/include/core/SkPathEffect.h"
-#include "Skia/include/core/SkRSXform.h"
 #include "Skia/include/core/SkRefCnt.h"
 
 
@@ -34,14 +33,15 @@
 #include "Skia/include/core/SkPath.h"
 #include "Skia/include/core/SkFont.h"
 #include "Skia/include/core/SkRRect.h"
+#include "Skia/include/core/SkMaskFilter.h"
+#include "Skia/include/core/SkDrawable.h"
+#include "Skia/include/effects/SkGradientShader.h"
 
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <GL/glu.h>
 
 #include <X11/X.h>
-#include <climits>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -49,7 +49,6 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
-#include "include/core/SkBlendMode.h"
 #include "include/core/SkSamplingOptions.h"
 
 #include <iomanip>
@@ -74,7 +73,7 @@ static SkBitmap source;
 static sk_sp<SkImage> image;
 static int DRAW_WIDTH = 256;
 static int DRAW_HEIGHT = 256;
-static int RESOURCE_ID = 2;
+static int RESOURCE_ID = 3;
 static bool SAVE_BITMAP = false;
 static bool SAVE_SKP = false;
 static const std::vector<std::string> pngResources = {"../resources/example_1.png",
@@ -220,34 +219,40 @@ static void releaseProc(void* addr, void* ) {
     delete[] (uint32_t*) addr;
 }
 
-// https://fiddle.skia.org/c/@Canvas_drawAtlas
+// https://fiddle.skia.org/c/@Canvas_drawLine
 void draw0(SkCanvas* canvas) {
-    // SkBitmap source = mandrill;
-    /**
-    *  A compressed form of a rotation+scale matrix.
-    *
-    *  [ fSCos     -fSSin    fTx ]
-    *  [ fSSin      fSCos    fTy ]
-    *  [     0          0      1 ]
-    */
-    SkRSXform xforms[] = { { .5f, 0, 0, 0 }, {0, .5f, 200, 100 } };
-    SkRect tex[] = { { 0, 0, 250, 250 }, { 0, 0, 250, 250 } };
-    SkColor colors[] = { 0x7f55aa00, 0x7f3333bf };
-    const SkImage* imagePtr = image.get();
-    SkSamplingOptions sampling;
-    canvas->drawAtlas(imagePtr, xforms, tex, colors, 2, SkBlendMode::kSrcOver,
-                        sampling, nullptr, nullptr);
-}
-
-// https://fiddle.skia.org/c/@Canvas_drawAtlas_2
-void draw1(SkCanvas* canvas) {
-    SkRSXform xforms[] = {{.5f, 0, 0, 0}, {0, .5f, 200, 100}};
-    SkRect tex[] = {{0, 0, 250, 250}, {0, 0, 250, 250}};
-    SkColor colors[] = {0x7f55aa00, 0x7f3333bf};
+    SkPath path;
+    // 2次贝塞尔曲线，由三个点的函数确认
+    // 曲线((1-t)^(2) x(P0)+2 (1-t) t x(P1)+t^(2) x(P2),(1-t)^(2) y(P0)+2 (1-t) t y(P1)+t^(2) y(P2),t,0,1)
+    path.moveTo(20, 20);    //P0
+    path.quadTo(60, 20, 60, 60);    // P1 P2
+    path.close();
+    path.moveTo(60, 20);
+    path.quadTo(60, 60, 20, 60);
     SkPaint paint;
-    paint.setAlpha(127);
-    SkSamplingOptions sampling;
-    canvas->drawAtlas(image.get(), xforms, tex, colors, 2, SkBlendMode::kPlus, sampling, nullptr, &paint);
+    paint.setStrokeWidth(10);
+    paint.setAntiAlias(true);
+    paint.setStyle(SkPaint::kStroke_Style);
+    for (auto join: { SkPaint::kBevel_Join, SkPaint::kRound_Join, SkPaint::kMiter_Join } ) {
+        paint.setStrokeJoin(join);
+        for (auto cap: { SkPaint::kButt_Cap, SkPaint::kSquare_Cap, SkPaint::kRound_Cap  } ) {
+            paint.setStrokeCap(cap);
+            canvas->drawPath(path, paint);
+            canvas->translate(80, 0);
+        }
+        canvas->translate(-240, 60);
+    }
+    paint.setStyle(SkPaint::kFill_Style);
+    for (auto fill : { SkPathFillType::kWinding,
+                       SkPathFillType::kEvenOdd,
+                       SkPathFillType::kInverseWinding } ) {
+        path.setFillType(fill);
+        canvas->save();
+        canvas->clipRect({0, 10, 80, 70});
+        canvas->drawPath(path, paint);
+        canvas->restore();
+        canvas->translate(80, 0);
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -321,7 +326,7 @@ int main(int argc, char* argv[]) {
     canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
 
-   DRAW_NO(1)(canvas);
+   DRAW_NO(0)(canvas);
 
     if (SAVE_SKP) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();

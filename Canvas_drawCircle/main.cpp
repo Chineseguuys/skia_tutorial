@@ -22,7 +22,6 @@
 
 #include "Skia/include/core/SkTextBlob.h"
 #include "Skia/include/core/SkPathEffect.h"
-#include "Skia/include/core/SkRSXform.h"
 #include "Skia/include/core/SkRefCnt.h"
 
 
@@ -34,14 +33,16 @@
 #include "Skia/include/core/SkPath.h"
 #include "Skia/include/core/SkFont.h"
 #include "Skia/include/core/SkRRect.h"
+#include "Skia/include/core/SkMaskFilter.h"
+#include "Skia/include/core/SkBlurTypes.h"
+#include "Skia/include/core/SkColorFilter.h"
+#include "Skia/include/core/SkSamplingOptions.h"
 
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <GL/glu.h>
 
 #include <X11/X.h>
-#include <climits>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -49,8 +50,6 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkSamplingOptions.h"
 
 #include <iomanip>
 #include <chrono>
@@ -220,34 +219,60 @@ static void releaseProc(void* addr, void* ) {
     delete[] (uint32_t*) addr;
 }
 
-// https://fiddle.skia.org/c/@Canvas_drawAtlas
+// https://fiddle.skia.org/c/@Canvas_drawBitmap
 void draw0(SkCanvas* canvas) {
-    // SkBitmap source = mandrill;
-    /**
-    *  A compressed form of a rotation+scale matrix.
-    *
-    *  [ fSCos     -fSSin    fTx ]
-    *  [ fSSin      fSCos    fTy ]
-    *  [     0          0      1 ]
-    */
-    SkRSXform xforms[] = { { .5f, 0, 0, 0 }, {0, .5f, 200, 100 } };
-    SkRect tex[] = { { 0, 0, 250, 250 }, { 0, 0, 250, 250 } };
-    SkColor colors[] = { 0x7f55aa00, 0x7f3333bf };
-    const SkImage* imagePtr = image.get();
-    SkSamplingOptions sampling;
-    canvas->drawAtlas(imagePtr, xforms, tex, colors, 2, SkBlendMode::kSrcOver,
-                        sampling, nullptr, nullptr);
+    SkPaint paint;
+    paint.setAntiAlias(true);
+    canvas->drawCircle(128, 128, 90, paint);
+    paint.setColor(SK_ColorWHITE);
+    canvas->drawCircle(86, 86, 20, paint);
+    canvas->drawCircle(160, 76, 20, paint);
+    canvas->drawCircle(140, 150, 35, paint);
 }
 
-// https://fiddle.skia.org/c/@Canvas_drawAtlas_2
-void draw1(SkCanvas* canvas) {
-    SkRSXform xforms[] = {{.5f, 0, 0, 0}, {0, .5f, 200, 100}};
-    SkRect tex[] = {{0, 0, 250, 250}, {0, 0, 250, 250}};
-    SkColor colors[] = {0x7f55aa00, 0x7f3333bf};
+// https://fiddle.skia.org/c/@Canvas_drawCircle_2
+void draw1(SkCanvas *canvas) {
     SkPaint paint;
-    paint.setAlpha(127);
-    SkSamplingOptions sampling;
-    canvas->drawAtlas(image.get(), xforms, tex, colors, 2, SkBlendMode::kPlus, sampling, nullptr, &paint);
+    paint.setAntiAlias(true);
+    canvas->drawCircle(128, 128, 90, paint);
+    paint.setColor(SK_ColorWHITE);
+    canvas->drawCircle({86, 86}, 20, paint);
+    canvas->drawCircle({160, 76}, 20, paint);
+    canvas->drawCircle({140, 150}, 35, paint);
+}
+
+// https://fiddle.skia.org/c/@Canvas_drawColor
+void draw2(SkCanvas *canvas) {
+    canvas->drawColor(SK_ColorRED);
+    canvas->clipRect(SkRect::MakeWH(150, 150));
+    canvas->drawColor(SkColorSetARGB(0x80, 0x00, 0xFF, 0x00), SkBlendMode::kPlus);
+    canvas->clipRect(SkRect::MakeWH(75, 75));
+    canvas->drawColor(SkColorSetARGB(0x80, 0x00, 0x00, 0xFF), SkBlendMode::kPlus);
+}
+
+// https://fiddle.skia.org/c/@Canvas_drawDRRect_a
+void draw3(SkCanvas *canvas) {
+    SkRRect outer = SkRRect::MakeRect({20, 40, 210, 200});
+    SkRRect inner = SkRRect::MakeOval({60, 70, 170, 160});
+    SkPaint paint;
+    paint.setColor(SK_ColorRED);
+    canvas->drawDRRect(outer, inner, paint);
+}
+
+// https://fiddle.skia.org/c/@Canvas_drawDRRect_b
+void draw4(SkCanvas *canvas) {
+    SkRRect outer = SkRRect::MakeRect({20, 40, 210, 200});
+    SkRRect inner = SkRRect::MakeRectXY({60, 70, 170, 160}, 10, 10);
+    SkPaint paint;
+    paint.setColor(SK_ColorGREEN);
+    paint.setAntiAlias(true);
+    paint.setStyle(SkPaint::kStroke_Style);
+    paint.setStrokeWidth(10);
+    paint.setStrokeJoin(SkPaint::kDefault_Join);
+    canvas->drawDRRect(outer, inner, paint);
+    paint.setStrokeWidth(1);
+    paint.setColor(SK_ColorRED);
+    canvas->drawDRRect(outer, inner, paint);
 }
 
 int main(int argc, char* argv[]) {
@@ -321,7 +346,7 @@ int main(int argc, char* argv[]) {
     canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
 
-   DRAW_NO(1)(canvas);
+   DRAW_NO(4)(canvas);
 
     if (SAVE_SKP) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();

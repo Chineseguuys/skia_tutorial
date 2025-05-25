@@ -21,8 +21,6 @@
 #include "Skia/include/core/SkImage.h"
 
 #include "Skia/include/core/SkTextBlob.h"
-#include "Skia/include/core/SkPathEffect.h"
-#include "Skia/include/core/SkRSXform.h"
 #include "Skia/include/core/SkRefCnt.h"
 
 
@@ -34,14 +32,13 @@
 #include "Skia/include/core/SkPath.h"
 #include "Skia/include/core/SkFont.h"
 #include "Skia/include/core/SkRRect.h"
+#include "Skia/include/core/SkDrawable.h"
 
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <GL/glu.h>
 
 #include <X11/X.h>
-#include <climits>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -49,8 +46,6 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkSamplingOptions.h"
 
 #include <iomanip>
 #include <chrono>
@@ -74,7 +69,7 @@ static SkBitmap source;
 static sk_sp<SkImage> image;
 static int DRAW_WIDTH = 256;
 static int DRAW_HEIGHT = 256;
-static int RESOURCE_ID = 2;
+static int RESOURCE_ID = 3;
 static bool SAVE_BITMAP = false;
 static bool SAVE_SKP = false;
 static const std::vector<std::string> pngResources = {"../resources/example_1.png",
@@ -220,34 +215,65 @@ static void releaseProc(void* addr, void* ) {
     delete[] (uint32_t*) addr;
 }
 
-// https://fiddle.skia.org/c/@Canvas_drawAtlas
+// https://fiddle.skia.org/c/@Canvas_drawPicture_2
 void draw0(SkCanvas* canvas) {
-    // SkBitmap source = mandrill;
-    /**
-    *  A compressed form of a rotation+scale matrix.
-    *
-    *  [ fSCos     -fSSin    fTx ]
-    *  [ fSSin      fSCos    fTy ]
-    *  [     0          0      1 ]
-    */
-    SkRSXform xforms[] = { { .5f, 0, 0, 0 }, {0, .5f, 200, 100 } };
-    SkRect tex[] = { { 0, 0, 250, 250 }, { 0, 0, 250, 250 } };
-    SkColor colors[] = { 0x7f55aa00, 0x7f3333bf };
-    const SkImage* imagePtr = image.get();
-    SkSamplingOptions sampling;
-    canvas->drawAtlas(imagePtr, xforms, tex, colors, 2, SkBlendMode::kSrcOver,
-                        sampling, nullptr, nullptr);
+    SkPictureRecorder recorder;
+    SkCanvas* recordingCanvas = recorder.beginRecording(50, 50);
+    for (auto color : { SK_ColorRED, SK_ColorBLUE, 0xff007f00 } ) {
+        SkPaint paint;
+        paint.setColor(color);
+        recordingCanvas->drawRect({10, 10, 30, 40}, paint);
+        recordingCanvas->translate(10, 10);
+        recordingCanvas->scale(1.2f, 1.4f);
+    }
+    sk_sp<SkPicture> playback = recorder.finishRecordingAsPicture();
+    canvas->drawPicture(playback);
+    canvas->scale(2, 2);
+    canvas->translate(50, 0);
+    canvas->drawPicture(playback);
 }
 
-// https://fiddle.skia.org/c/@Canvas_drawAtlas_2
-void draw1(SkCanvas* canvas) {
-    SkRSXform xforms[] = {{.5f, 0, 0, 0}, {0, .5f, 200, 100}};
-    SkRect tex[] = {{0, 0, 250, 250}, {0, 0, 250, 250}};
-    SkColor colors[] = {0x7f55aa00, 0x7f3333bf};
+// https://fiddle.skia.org/c/@Canvas_drawPicture_3
+void draw1(SkCanvas *canvas) {
     SkPaint paint;
-    paint.setAlpha(127);
-    SkSamplingOptions sampling;
-    canvas->drawAtlas(image.get(), xforms, tex, colors, 2, SkBlendMode::kPlus, sampling, nullptr, &paint);
+    SkPictureRecorder recorder;
+    SkCanvas* recordingCanvas = recorder.beginRecording(50, 50);
+    for (auto color : { SK_ColorRED, SK_ColorBLUE, 0xff007f00 } ) {
+        paint.setColor(color);
+        recordingCanvas->drawRect({10, 10, 30, 40}, paint);
+        recordingCanvas->translate(10, 10);
+        recordingCanvas->scale(1.2f, 1.4f);
+    }
+    sk_sp<SkPicture> playback = recorder.finishRecordingAsPicture();
+    const SkPicture* playbackPtr = playback.get();
+    SkMatrix matrix;
+    matrix.reset();
+    for (auto alpha : { 70, 140, 210 } ) {
+        paint.setAlpha(alpha);
+        canvas->drawPicture(playbackPtr, &matrix, &paint);
+        matrix.preTranslate(70, 70);
+    }
+}
+
+// https://fiddle.skia.org/c/@Canvas_drawPicture_4
+void draw2(SkCanvas *canvas) {
+    SkPaint paint;
+    SkPictureRecorder recorder;
+    SkCanvas* recordingCanvas = recorder.beginRecording(50, 50);
+    for (auto color : { SK_ColorRED, SK_ColorBLUE, 0xff007f00 } ) {
+        paint.setColor(color);
+        recordingCanvas->drawRect({10, 10, 30, 40}, paint);
+        recordingCanvas->translate(10, 10);
+        recordingCanvas->scale(1.2f, 1.4f);
+    }
+    sk_sp<SkPicture> playback = recorder.finishRecordingAsPicture();
+    SkMatrix matrix;
+    matrix.reset();
+    for (auto alpha : { 70, 140, 210 } ) {
+    paint.setAlpha(alpha);
+    canvas->drawPicture(playback, &matrix, &paint);
+    matrix.preTranslate(70, 70);
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -321,7 +347,7 @@ int main(int argc, char* argv[]) {
     canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
 
-   DRAW_NO(1)(canvas);
+   DRAW_NO(2)(canvas);
 
     if (SAVE_SKP) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();

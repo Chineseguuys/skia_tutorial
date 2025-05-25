@@ -22,7 +22,6 @@
 
 #include "Skia/include/core/SkTextBlob.h"
 #include "Skia/include/core/SkPathEffect.h"
-#include "Skia/include/core/SkRSXform.h"
 #include "Skia/include/core/SkRefCnt.h"
 
 
@@ -34,14 +33,14 @@
 #include "Skia/include/core/SkPath.h"
 #include "Skia/include/core/SkFont.h"
 #include "Skia/include/core/SkRRect.h"
+#include "Skia/include/core/SkMaskFilter.h"
+#include "Skia/include/core/SkDrawable.h"
 
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <GL/glu.h>
 
 #include <X11/X.h>
-#include <climits>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -49,8 +48,6 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkSamplingOptions.h"
 
 #include <iomanip>
 #include <chrono>
@@ -220,34 +217,26 @@ static void releaseProc(void* addr, void* ) {
     delete[] (uint32_t*) addr;
 }
 
-// https://fiddle.skia.org/c/@Canvas_drawAtlas
-void draw0(SkCanvas* canvas) {
-    // SkBitmap source = mandrill;
-    /**
-    *  A compressed form of a rotation+scale matrix.
-    *
-    *  [ fSCos     -fSSin    fTx ]
-    *  [ fSSin      fSCos    fTy ]
-    *  [     0          0      1 ]
-    */
-    SkRSXform xforms[] = { { .5f, 0, 0, 0 }, {0, .5f, 200, 100 } };
-    SkRect tex[] = { { 0, 0, 250, 250 }, { 0, 0, 250, 250 } };
-    SkColor colors[] = { 0x7f55aa00, 0x7f3333bf };
-    const SkImage* imagePtr = image.get();
-    SkSamplingOptions sampling;
-    canvas->drawAtlas(imagePtr, xforms, tex, colors, 2, SkBlendMode::kSrcOver,
-                        sampling, nullptr, nullptr);
-}
+struct MyDrawable : public SkDrawable {
+    SkRect onGetBounds() override { return SkRect::MakeWH(50, 100);  }
+    void onDraw(SkCanvas* canvas) override {
+       SkPath path;
+       path.conicTo(10, 90, 50, 90, 0.9f);
+       SkPaint paint;
+       paint.setColor(SK_ColorBLUE);
+       canvas->drawRect(path.getBounds(), paint);
+       paint.setAntiAlias(true);
+       paint.setColor(SK_ColorWHITE);
+       canvas->drawPath(path, paint);
+    }
+};
 
-// https://fiddle.skia.org/c/@Canvas_drawAtlas_2
-void draw1(SkCanvas* canvas) {
-    SkRSXform xforms[] = {{.5f, 0, 0, 0}, {0, .5f, 200, 100}};
-    SkRect tex[] = {{0, 0, 250, 250}, {0, 0, 250, 250}};
-    SkColor colors[] = {0x7f55aa00, 0x7f3333bf};
-    SkPaint paint;
-    paint.setAlpha(127);
-    SkSamplingOptions sampling;
-    canvas->drawAtlas(image.get(), xforms, tex, colors, 2, SkBlendMode::kPlus, sampling, nullptr, &paint);
+// https://fiddle.skia.org/c/@Canvas_drawBitmap
+void draw0(SkCanvas* canvas) {
+    sk_sp<SkDrawable> drawable(new MyDrawable);
+    SkMatrix matrix;
+    matrix.setTranslate(10, 10);
+    canvas->drawDrawable(drawable.get(), &matrix);
 }
 
 int main(int argc, char* argv[]) {
@@ -321,7 +310,7 @@ int main(int argc, char* argv[]) {
     canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
 
-   DRAW_NO(1)(canvas);
+   DRAW_NO(0)(canvas);
 
     if (SAVE_SKP) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();

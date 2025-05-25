@@ -21,8 +21,6 @@
 #include "Skia/include/core/SkImage.h"
 
 #include "Skia/include/core/SkTextBlob.h"
-#include "Skia/include/core/SkPathEffect.h"
-#include "Skia/include/core/SkRSXform.h"
 #include "Skia/include/core/SkRefCnt.h"
 
 
@@ -34,14 +32,13 @@
 #include "Skia/include/core/SkPath.h"
 #include "Skia/include/core/SkFont.h"
 #include "Skia/include/core/SkRRect.h"
+#include "Skia/include/core/SkDrawable.h"
 
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <GL/glu.h>
 
 #include <X11/X.h>
-#include <climits>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -49,8 +46,6 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkSamplingOptions.h"
 
 #include <iomanip>
 #include <chrono>
@@ -74,7 +69,7 @@ static SkBitmap source;
 static sk_sp<SkImage> image;
 static int DRAW_WIDTH = 256;
 static int DRAW_HEIGHT = 256;
-static int RESOURCE_ID = 2;
+static int RESOURCE_ID = 3;
 static bool SAVE_BITMAP = false;
 static bool SAVE_SKP = false;
 static const std::vector<std::string> pngResources = {"../resources/example_1.png",
@@ -220,34 +215,63 @@ static void releaseProc(void* addr, void* ) {
     delete[] (uint32_t*) addr;
 }
 
-// https://fiddle.skia.org/c/@Canvas_drawAtlas
 void draw0(SkCanvas* canvas) {
-    // SkBitmap source = mandrill;
-    /**
-    *  A compressed form of a rotation+scale matrix.
-    *
-    *  [ fSCos     -fSSin    fTx ]
-    *  [ fSSin      fSCos    fTy ]
-    *  [     0          0      1 ]
-    */
-    SkRSXform xforms[] = { { .5f, 0, 0, 0 }, {0, .5f, 200, 100 } };
-    SkRect tex[] = { { 0, 0, 250, 250 }, { 0, 0, 250, 250 } };
-    SkColor colors[] = { 0x7f55aa00, 0x7f3333bf };
-    const SkImage* imagePtr = image.get();
-    SkSamplingOptions sampling;
-    canvas->drawAtlas(imagePtr, xforms, tex, colors, 2, SkBlendMode::kSrcOver,
-                        sampling, nullptr, nullptr);
+    SkPaint paint;
+    paint.setAntiAlias(true);
+    paint.setColor(0x80349a45);
+    paint.setStyle(SkPaint::kStroke_Style);
+    paint.setStrokeWidth(50);
+    paint.setStrokeCap(SkPaint::kRound_Cap);
+    canvas->scale(1, 1.2f);
+    // (64, 96) * (1.0f, 1.2f) = (64, 115)
+    canvas->drawPoint(64, 96, paint);
+    canvas->scale(.6f, .8f);
+    paint.setColor(SK_ColorWHITE);
+    // (106, 120) * (1.0f, 1.2f) * (.6f, .8f) = (64, 115)
+    canvas->drawPoint(106, 120, paint);
 }
 
-// https://fiddle.skia.org/c/@Canvas_drawAtlas_2
+// https://fiddle.skia.org/c/@Canvas_drawPoint_2
 void draw1(SkCanvas* canvas) {
-    SkRSXform xforms[] = {{.5f, 0, 0, 0}, {0, .5f, 200, 100}};
-    SkRect tex[] = {{0, 0, 250, 250}, {0, 0, 250, 250}};
-    SkColor colors[] = {0x7f55aa00, 0x7f3333bf};
     SkPaint paint;
-    paint.setAlpha(127);
-    SkSamplingOptions sampling;
-    canvas->drawAtlas(image.get(), xforms, tex, colors, 2, SkBlendMode::kPlus, sampling, nullptr, &paint);
+    paint.setAntiAlias(true);
+    paint.setColor(0x80349a45);
+    paint.setStyle(SkPaint::kStroke_Style);
+    paint.setStrokeWidth(100);
+    paint.setStrokeCap(SkPaint::kSquare_Cap);
+    canvas->scale(1, 1.2f);
+    canvas->drawPoint({64, 96}, paint);
+    canvas->scale(.6f, .8f);
+    paint.setColor(SK_ColorWHITE);
+    canvas->drawPoint(106, 120, paint);
+}
+
+// https://fiddle.skia.org/c/@Canvas_drawPoints
+void draw2(SkCanvas* canvas) {
+    SkPaint paint;
+    paint.setAntiAlias(true);
+    paint.setStyle(SkPaint::kStroke_Style);
+    paint.setStrokeWidth(10);
+    paint.setColor(0x80349a45);
+    const SkPoint points[] = {{32, 16}, {48, 48}, {16, 32}};
+    const SkPaint::Join join[] = { SkPaint::kRound_Join,
+                                   SkPaint::kMiter_Join,
+                                   SkPaint::kBevel_Join };
+    int joinIndex = 0;
+    SkPath path;
+    path.addPoly(points, 3, false);
+    for (const auto cap : { SkPaint::kRound_Cap, SkPaint::kSquare_Cap, SkPaint::kButt_Cap } ) {
+        paint.setStrokeCap(cap);
+        paint.setStrokeJoin(join[joinIndex++]);
+        for (const auto mode : { SkCanvas::kPoints_PointMode,
+                                 SkCanvas::kLines_PointMode,
+                                 SkCanvas::kPolygon_PointMode } ) {
+            canvas->drawPoints(mode, 3, points, paint);
+            canvas->translate(64, 0);
+        }
+        canvas->drawPath(path, paint);
+        canvas->translate(-192, 64);
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -321,7 +345,7 @@ int main(int argc, char* argv[]) {
     canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
 
-   DRAW_NO(1)(canvas);
+   DRAW_NO(2)(canvas);
 
     if (SAVE_SKP) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();

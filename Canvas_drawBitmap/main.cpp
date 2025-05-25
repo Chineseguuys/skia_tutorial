@@ -22,7 +22,6 @@
 
 #include "Skia/include/core/SkTextBlob.h"
 #include "Skia/include/core/SkPathEffect.h"
-#include "Skia/include/core/SkRSXform.h"
 #include "Skia/include/core/SkRefCnt.h"
 
 
@@ -34,14 +33,16 @@
 #include "Skia/include/core/SkPath.h"
 #include "Skia/include/core/SkFont.h"
 #include "Skia/include/core/SkRRect.h"
+#include "Skia/include/core/SkMaskFilter.h"
+#include "Skia/include/core/SkBlurTypes.h"
+#include "Skia/include/core/SkColorFilter.h"
+#include "Skia/include/core/SkSamplingOptions.h"
 
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <GL/glu.h>
 
 #include <X11/X.h>
-#include <climits>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -49,8 +50,6 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkSamplingOptions.h"
 
 #include <iomanip>
 #include <chrono>
@@ -220,34 +219,92 @@ static void releaseProc(void* addr, void* ) {
     delete[] (uint32_t*) addr;
 }
 
-// https://fiddle.skia.org/c/@Canvas_drawAtlas
+// https://fiddle.skia.org/c/@Canvas_drawBitmap
 void draw0(SkCanvas* canvas) {
-    // SkBitmap source = mandrill;
-    /**
-    *  A compressed form of a rotation+scale matrix.
-    *
-    *  [ fSCos     -fSSin    fTx ]
-    *  [ fSSin      fSCos    fTy ]
-    *  [     0          0      1 ]
-    */
-    SkRSXform xforms[] = { { .5f, 0, 0, 0 }, {0, .5f, 200, 100 } };
-    SkRect tex[] = { { 0, 0, 250, 250 }, { 0, 0, 250, 250 } };
-    SkColor colors[] = { 0x7f55aa00, 0x7f3333bf };
-    const SkImage* imagePtr = image.get();
-    SkSamplingOptions sampling;
-    canvas->drawAtlas(imagePtr, xforms, tex, colors, 2, SkBlendMode::kSrcOver,
-                        sampling, nullptr, nullptr);
+    uint8_t pixels[][8] = { { 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x00},
+                            { 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00},
+                            { 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00},
+                            { 0xFF, 0xFF, 0x00, 0xFF, 0xFF, 0x00, 0xFF, 0xFF},
+                            { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
+                            { 0x00, 0x00, 0xFF, 0x00, 0x00, 0xFF, 0x00, 0x00},
+                            { 0x00, 0xFF, 0x00, 0xFF, 0xFF, 0x00, 0xFF, 0x00},
+                            { 0xFF, 0x00, 0xFF, 0x00, 0x00, 0xFF, 0x00, 0xFF} };
+    SkBitmap bitmap;
+    bitmap.installPixels(SkImageInfo::MakeA8(8, 8),
+            (void*) pixels, sizeof(pixels[0]));
+    SkPaint paint;
+    canvas->scale(4, 4);
+    for (auto color : { SK_ColorRED, SK_ColorBLUE, 0xFF007F00} ) {
+        paint.setColor(color);
+        canvas->drawImage(bitmap.asImage(), 0, 0, SkSamplingOptions(), &paint);
+        canvas->translate(12, 0);
+    }
 }
 
-// https://fiddle.skia.org/c/@Canvas_drawAtlas_2
-void draw1(SkCanvas* canvas) {
-    SkRSXform xforms[] = {{.5f, 0, 0, 0}, {0, .5f, 200, 100}};
-    SkRect tex[] = {{0, 0, 250, 250}, {0, 0, 250, 250}};
-    SkColor colors[] = {0x7f55aa00, 0x7f3333bf};
+// https://fiddle.skia.org/c/@Canvas_drawBitmapRect
+void draw1(SkCanvas *canvas) {
+    uint8_t pixels[][8] = { { 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x00},
+                            { 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00},
+                            { 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00},
+                            { 0xFF, 0xFF, 0x00, 0xFF, 0xFF, 0x00, 0xFF, 0xFF},
+                            { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
+                            { 0x00, 0x00, 0xFF, 0x00, 0x00, 0xFF, 0x00, 0x00},
+                            { 0x00, 0xFF, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x00},
+                            { 0x00, 0x00, 0xFF, 0x00, 0x00, 0xFF, 0x00, 0x00} };
+    SkBitmap bitmap;
+    bitmap.installPixels(SkImageInfo::MakeA8(8, 8),
+            (void*) pixels, sizeof(pixels[0]));
     SkPaint paint;
-    paint.setAlpha(127);
-    SkSamplingOptions sampling;
-    canvas->drawAtlas(image.get(), xforms, tex, colors, 2, SkBlendMode::kPlus, sampling, nullptr, &paint);
+    paint.setMaskFilter(SkMaskFilter::MakeBlur(kInner_SkBlurStyle, 6));
+    for (auto color : { SK_ColorRED, SK_ColorBLUE, 0xFF007F00} ) {
+        paint.setColor(color);
+        canvas->drawImageRect(bitmap.asImage(),
+                              SkRect::MakeWH(8, 8), SkRect::MakeWH(32, 32),
+                              SkSamplingOptions(), &paint,
+                              SkCanvas::kStrict_SrcRectConstraint);
+        canvas->translate(48, 0);
+    }
+}
+
+// https://fiddle.skia.org/c/@Canvas_drawBitmapRect_2
+void draw2(SkCanvas *canvas) {
+    uint8_t pixels[][8] = { { 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00},
+                            { 0x00, 0xFF, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x00},
+                            { 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0x00, 0xFF},
+                            { 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0x00, 0xFF},
+                            { 0xFF, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x00, 0xFF},
+                            { 0xFF, 0x00, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0xFF},
+                            { 0x00, 0xFF, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x00},
+                            { 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00} };
+    SkBitmap bitmap;
+    bitmap.installPixels(SkImageInfo::MakeA8(8, 8),
+            (void*) pixels, sizeof(pixels[0]));
+    SkPaint paint;
+    for (auto color : { SK_ColorRED, SK_ColorBLUE, 0xFF007F00, 0xFF7f007f} ) {
+        paint.setColor(color);
+        canvas->drawImageRect(bitmap.asImage().get(),
+                              SkRect::MakeWH(8, 8), SkRect::MakeWH(64, 64),
+                              SkSamplingOptions({1.0f/3, 1.0f/3}), &paint,
+                              SkCanvas::kStrict_SrcRectConstraint);
+        canvas->translate(70.0f, 0);
+    }
+}
+
+// https://fiddle.skia.org/c/@Canvas_drawBitmapRect_3
+void draw3(SkCanvas *canvas) {
+     uint32_t pixels[][2] = { { 0x00000000, 0x55550000},
+                             { 0xAAAA0000, 0xFFFF0000} };
+    SkBitmap bitmap;
+    bitmap.installPixels(SkImageInfo::MakeN32Premul(2, 2),
+            (void*) pixels, sizeof(pixels[0]));
+    SkPaint paint;
+    canvas->scale(4, 4);
+    for (auto color : { SK_ColorRED, SK_ColorBLUE, SK_ColorGREEN, SK_ColorTRANSPARENT } ) {
+        paint.setColorFilter(SkColorFilters::Blend(color, SkBlendMode::kPlus));
+        canvas->drawImageRect(bitmap.asImage().get(), SkRect::MakeWH(8, 8),
+                              SkSamplingOptions(), &paint);
+        canvas->translate(8, 0);
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -321,7 +378,7 @@ int main(int argc, char* argv[]) {
     canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
 
-   DRAW_NO(1)(canvas);
+   DRAW_NO(3)(canvas);
 
     if (SAVE_SKP) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();
