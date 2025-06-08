@@ -1,6 +1,7 @@
 .vscode/
 build/
 .gitignore
+*.code-workspace
 .xmake/
 .cache/
 04_skia_clipRect/
