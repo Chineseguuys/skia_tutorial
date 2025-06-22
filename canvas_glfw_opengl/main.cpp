@@ -243,6 +243,11 @@ static void glfw_error_callback(int error, const char* description) {
     spdlog::error("GLFW Error {}:{}", error, description);
 }
 
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+        glfwSetWindowShouldClose(window, GL_TRUE);
+}
+
 void draw0(SkCanvas* canvas) {
     SkVector radii[] = { {0, 20}, {10, 10}, {10, 20}, {10, 40} };
     SkPaint paint;
@@ -351,7 +356,7 @@ int main(int argc, char* argv[]) {
         } else if (surfaceColorType == kAlpha_8_SkColorType) {
             fbInfo.fFormat = GL_R8;
         }
-
+ 
         SkSurfaceProps props(0, kUnknown_SkPixelGeometry);
         auto backendRT = GrBackendRenderTargets::MakeGL(width, height, 0, STENCIL_BUFFER_SIZE, fbInfo);
         skSurface = SkSurfaces::WrapBackendRenderTarget(grContext.get(), backendRT,
@@ -365,7 +370,7 @@ int main(int argc, char* argv[]) {
         spdlog::critical("can not build sksurface!");
         return 3;
     }
-
+ 
     glfwSwapInterval(1);
 
     while (!glfwWindowShouldClose(window)) {
@@ -391,10 +396,10 @@ int main(int argc, char* argv[]) {
         paint.setColor(SK_ColorRED);
         paint.setAntiAlias(true);
 
-        canvas->drawRoundRect(SkRect::MakeXYWH(100, 100, 600, 400), 30, 30, paint);
-        // Todo: Why /home/yanjiangha/Android/Skia/include/gpu/GrDirectContext.h:334:(.text._ZN15GrDirectContext14flushAndSubmitE9GrSyncCpu[_ZN15GrDirectContext14flushAndSubmitE9GrSyncCpu]+0x7d): undefined reference to `GrDirectContext::submit(GrSyncCpu)'
+        canvas->drawRoundRect(SkRect::MakeXYWH(50, 50, 600, 400), 30, 30, paint);
+        // Todo: Why Skia/include/gpu/GrDirectContext.h:334:(.text._ZN15GrDirectContext14flushAndSubmitE9GrSyncCpu[_ZN15GrDirectContext14flushAndSubmitE9GrSyncCpu]+0x7d): undefined reference to `GrDirectContext::submit(GrSyncCpu)'
         //grContext->flushAndSubmit();
-        grContext->flush();
+        grContext->flushAndSubmit(skSurface.get());
         //skgpu::ganesh::FlushAndSubmit(skSurface);
 
         glfwSwapBuffers(window);
