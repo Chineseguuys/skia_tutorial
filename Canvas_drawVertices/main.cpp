@@ -1,20 +1,3 @@
-// for glfw direct rendering
-#define SK_GANESH
-#define SK_GL
-
-#include <glad/glad.h>
-#include <GLFW/glfw3.h>
-#include "GL/glext.h"
-#include "Skia/include/gpu/GrBackendSurface.h"
-#include "Skia/include/gpu/ganesh/GrDriverBugWorkarounds.h"
-#include "Skia/include/gpu/ganesh/gl/GrGLDirectContext.h"
-#include "Skia/include/gpu/GrDirectContext.h"
-#include "Skia/include/gpu/gl/GrGLInterface.h"
-#include "Skia/include/gpu/ganesh/SkSurfaceGanesh.h"
-#include "Skia/include/gpu/ganesh/gl/GrGLBackendSurface.h"
-#include "Skia/include/gpu/ganesh/gl/GrGLTypes.h"
-#include "Skia/include/gpu/ganesh/gl/GrGLAssembleInterface.h"
-
 #include "Skia/include/core/SkCanvas.h"
 #include "Skia/include/core/SkSurface.h"
 #include "Skia/include/core/SkStream.h"
@@ -43,12 +26,15 @@
 
 #include "Skia/include/core/SkColor.h"
 // added and open the SK_DEBUG for SkRefCnt.h:166: fatal error: "assertf(rc == 1): NVRefCnt was 0"
-// #include "Skia/include/config/SkUserConfig.h"
+#include "Skia/include/config/SkUserConfig.h"
 #include "Skia/include/core/SkColorSpace.h"
 #include "Skia/include/core/SkPaint.h"
 #include "Skia/include/core/SkPath.h"
 #include "Skia/include/core/SkFont.h"
+#include "Skia/include/core/SkRRect.h"
 #include "Skia/include/core/SkDrawable.h"
+#include "Skia/include/core/SkVertices.h"
+
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <GL/glu.h>
@@ -61,12 +47,6 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkSurfaceProps.h"
-#include "include/gpu/GrContextOptions.h"
-#include "include/gpu/GrTypes.h"
-#include "include/gpu/gl/GrGLTypes.h"
-#include "include/private/base/SkDebug.h"
 
 #include <iomanip>
 #include <chrono>
@@ -81,10 +61,6 @@
 #endif
 
 #include "backward.hpp"
-
-#define DRAW_NO(_number) draw##_number
-
-#define STENCIL_BUFFER_SIZE (0)
 
 static sk_sp<SkFontMgr> fontMgr;
 static sk_sp<SkTypeface> typeFace;
@@ -238,37 +214,14 @@ static void releaseProc(void* addr, void* ) {
     delete[] (uint32_t*) addr;
 }
 
-// GLFW 错误回调
-static void glfw_error_callback(int error, const char* description) {
-    fprintf(stderr, "GLFW Error %d: %s\n", error, description);
-    spdlog::error("GLFW Error {}:{}", error, description);
-}
-
-void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-        glfwSetWindowShouldClose(window, GL_TRUE);
-}
-
-void draw0(SkCanvas* canvas) {
-    SkVector radii[] = { {0, 20}, {10, 10}, {10, 20}, {10, 40} };
+// https://fiddle.skia.org/c/@Canvas_drawVertices
+void draw(SkCanvas* canvas) {
     SkPaint paint;
-    paint.setStrokeWidth(1);
-    paint.setStrokeJoin(SkPaint::kRound_Join);
-    paint.setAntiAlias(true);
-    for (auto style : { SkPaint::kStroke_Style, SkPaint::kFill_Style  } ) {
-        paint.setStyle(style );
-        for (size_t i = 0; i < std::size(radii); ++i) {
-           canvas->drawRoundRect({10, 10, 60, 40}, radii[i].fX, radii[i].fY, paint);
-           canvas->translate(0, 60);
-        }
-        canvas->translate(80, -240);
-    }
-}
-
-void initGrContextOptions(GrContextOptions& options) {
-    options.fPreferExternalImagesOverES3 = true;
-    options.fDisableDistanceFieldPaths = false;
-    options.fReduceOpsTaskSplitting = GrContextOptions::Enable::kNo;
+    SkPoint points[] = { { 0, 0 }, { 250, 0 }, { 100, 100 }, { 0, 250 } };
+    SkColor colors[] = { SK_ColorRED, SK_ColorBLUE, SK_ColorYELLOW, SK_ColorCYAN };
+    auto vertices = SkVertices::MakeCopy(SkVertices::kTriangleFan_VertexMode,
+            std::size(points), points, nullptr, colors);
+    canvas->drawVertices(vertices.get(), SkBlendMode::kDst, paint);
 }
 
 int main(int argc, char* argv[]) {
@@ -297,149 +250,69 @@ int main(int argc, char* argv[]) {
     //catch exception and parse the command lines
     CLI11_PARSE(app, argc, argv);
 
-    // init glfw
-    glfwSetErrorCallback(glfw_error_callback);
-    if (!glfwInit()) {
-        return -1;
+    spdlog::info("Canvas: [wxh]=[{}x{}]", DRAW_WIDTH, DRAW_HEIGHT);
+
+    fontMgr = SkFontMgr_New_Custom_Directory(fontDir.c_str());
+    if (fontMgr == nullptr) {
+        spdlog::error("{}: can not create font manager!", __FUNCTION__);
     }
 
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwWindowHint(GLFW_STENCIL_BITS, 0);
-    //glfwWindowHint(GLFW_ALPHA_BITS, 0);
-    glfwWindowHint(GLFW_DEPTH_BITS, 0);
-
-    GLFWwindow* window = glfwCreateWindow(800, 600, "Skia + GLFW", NULL, NULL);
-    if (!window) {
-        glfwTerminate();
-        spdlog::critical("Can not create glfw window handle! terminate it!");
-        return -1;
+    int fontFamilyCounts = fontMgr->countFamilies();
+    spdlog::debug("{}: font family count is {}", __FUNCTION__, fontFamilyCounts);
+    for (int idx = 0; idx < fontFamilyCounts; ++idx) {
+        SkString fontFamilyName;
+        fontMgr->getFamilyName(idx, &fontFamilyName);
+        spdlog::debug("{}: Family[{}]={}", __FUNCTION__, idx, fontFamilyName.c_str());
     }
 
-    glfwMakeContextCurrent(window);
+    const char* fontFamily = nullptr;
+    SkFontStyle fontStyle;
 
-    if (!gladLoadGLLoader((GLADloadproc) glfwGetProcAddress)) {
-        spdlog::critical("Failed to Initialize GLAD");
-        return -1;
+    typeFace = fontMgr->legacyMakeTypeface(fontFamily, fontStyle);
+    if (typeFace == nullptr) {
+        spdlog::error("{}: can not create type face from font manager!", __FUNCTION__);
     }
 
-#if 1
-    GLint curReadFB;
-    GLint curDrawFB;
-    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &curReadFB);
-    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &curDrawFB);
+    loadPngToBitmap(pngResources[RESOURCE_ID].c_str(), source);
 
-    GLint buffer = GL_NONE;
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glGetIntegerv(GL_DRAW_BUFFER0, &buffer);
-    if (buffer == GL_NONE) {
-        const GLenum drawBuffer = GL_BACK;
-        glDrawBuffers(1, &drawBuffer);
+    SkImageInfo imageInfo = SkImageInfo::Make(
+        DRAW_WIDTH, DRAW_HEIGHT,
+        kBGRA_8888_SkColorType,
+        kOpaque_SkAlphaType);
+    sk_sp<SkSurface> surface = SkSurfaces::Raster(imageInfo);
+    SkCanvas* canvas = surface->getCanvas();
+
+    SkPictureRecorder recorder;
+    SkCanvas* recordingCanvas = recorder.beginRecording(DRAW_WIDTH, DRAW_HEIGHT);
+    if (SAVE_SKP) {
+        spdlog::debug("{}: replace canvas with recording canvas!", __func__);
+        canvas = recordingCanvas;
     }
 
-    glGetIntegerv(GL_READ_BUFFER, &buffer);
-    if (buffer == GL_NONE) {
-        glReadBuffer(GL_BACK);
-    }
-
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, curReadFB);
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, curDrawFB);
+#ifdef INIT_WHITEBACKGROUND
+    canvas->drawColor(SK_ColorWHITE);
+#else
+    canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
 
-    // 初始化 skia gpu 上下文
-    GrContextOptions options;
-    initGrContextOptions(options);
-    sk_sp<const GrGLInterface> glInterface(GrGLMakeNativeInterface());
-    if (glInterface == nullptr) {
-        spdlog::info("back to make assembled interface");
-        glInterface = GrGLMakeAssembledInterface(
-            nullptr,
-            (GrGLGetProc) * [](void*, const char* p) -> void* { return (void*)glfwGetProcAddress(p); });
-    }
-    sk_sp<GrDirectContext> grContext(GrDirectContexts::MakeGL(glInterface, options));
-    if (grContext.get() == nullptr) {
-        spdlog::error("Can not create GrDirectContext for Skia");
-        return 2;
+   draw(canvas);
+
+    if (SAVE_SKP) {
+        sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();
+        std::string skpFileName = generate_filename("output", "skp");
+        savePictureAsSKP(picture, skpFileName.c_str());
+
+        canvas = surface->getCanvas();
+        canvas->drawPicture(picture);
     }
 
-    SkColorType surfaceColorType = SkColorType::kRGBA_8888_SkColorType;
-    sk_sp<SkColorSpace> surfaceColorSpace = SkColorSpace::MakeSRGB();
- 
-    sk_sp<SkSurface> skSurface;
-    auto rebuildSurface = [&]() {
-        int width, height;
-        glfwGetFramebufferSize(window, &width, &height);
-        //glViewport(0, 0, width, height);
+    if(SAVE_BITMAP) {
+        SkBitmap bitmap;
+        bitmap.allocPixels(imageInfo, imageInfo.minRowBytes());
+        surface->readPixels(bitmap, 0, 0);
 
-        spdlog::debug("glfw frame buffer size = [{}, {}]", width, height);
-        GrGLFramebufferInfo fbInfo;
-        fbInfo.fFBOID = 0;
-        if (surfaceColorType == kRGBA_10x6_SkColorType) {
-            fbInfo.fFormat = GL_RGBA16F;
-        } else if (surfaceColorType == kRGBA_8888_SkColorType) {
-            fbInfo.fFormat = GL_RGBA8;
-        } else if (surfaceColorType == kRGBA_1010102_SkColorType) {
-            fbInfo.fFormat = GL_RGB10_A2;
-        } else if (surfaceColorType == kAlpha_8_SkColorType) {
-            fbInfo.fFormat = GL_R8;
-        }
-
-        SkSurfaceProps props(0, kUnknown_SkPixelGeometry);
-        auto backendRT = GrBackendRenderTargets::MakeGL(width, height, 0, STENCIL_BUFFER_SIZE, fbInfo);
-        skSurface = SkSurfaces::WrapBackendRenderTarget(grContext.get(), backendRT,
-            kBottomLeft_GrSurfaceOrigin, surfaceColorType, surfaceColorSpace, &props);
-        spdlog::debug("WrapBackendRenderTarget returned {}", fmt::ptr(skSurface.get()));
-        return skSurface != nullptr;
-    };
-
-    if (!rebuildSurface()) {
-        glfwTerminate();
-        spdlog::critical("can not build sksurface!");
-        return 3;
+        std::string pngName = generate_filename("output", "png");
+        saveBitmapAsPng(bitmap, pngName.c_str());
     }
-
-    //glfwSwapInterval(1);
-
-    while (!glfwWindowShouldClose(window)) {
-        glfwPollEvents();
-
-#if 0
-        if (glfwGetWindowAttrib(window, GLFW_RESIZABLE)) {
-            int newWidth, newHeight;
-            glfwGetFramebufferSize(window, &newWidth, &newHeight);
-            if (newWidth != skSurface->width() || newHeight != skSurface->height()) {
-                spdlog::info("rebuild surface!");
-                if (!rebuildSurface()) {
-                    spdlog::critical("can not build sksurface!");
-                    glfwTerminate();
-                    return 3;
-                }
-            }
-        }
-#endif
-        rebuildSurface();
-        SkCanvas *canvas = skSurface->getCanvas();
-        canvas->clear(SK_ColorWHITE);
-
-        SkPaint paint;
-        paint.setColor(SK_ColorRED);
-        paint.setAntiAlias(true);
-
-        canvas->drawRoundRect(SkRect::MakeXYWH(50, 50, 600, 400), 30, 30, paint);
-        // Todo: Why Skia/include/gpu/GrDirectContext.h:334:(.text._ZN15GrDirectContext14flushAndSubmitE9GrSyncCpu[_ZN15GrDirectContext14flushAndSubmitE9GrSyncCpu]+0x7d): undefined reference to `GrDirectContext::submit(GrSyncCpu)'
-        grContext->flushAndSubmit();
-        //grContext->flush();
-        //skgpu::ganesh::FlushAndSubmit(skSurface);
-
-        glfwSwapBuffers(window);
-    }
-
-    skSurface.reset();
-    grContext.reset();
-    glfwDestroyWindow(window);
-    glfwTerminate();
-
     return 0;
 }
