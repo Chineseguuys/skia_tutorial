@@ -30,11 +30,10 @@
 #include "Skia/include/core/SkColorSpace.h"
 #include "Skia/include/core/SkPaint.h"
 #include "Skia/include/core/SkPath.h"
-#include "Skia/include/core/SkFont.h"
 #include "Skia/include/core/SkRRect.h"
 #include "Skia/include/core/SkDrawable.h"
-#include "Skia/include/core/SkVertices.h"
-#include "Skia/include/effects/SkGradientShader.h"
+#include "Skia/include/core/SkShader.h"
+#include "Skia/include/gpu/GrRecordingContext.h"
 
 #include <GL/gl.h>
 #include <GL/glx.h>
@@ -48,9 +47,9 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
-#include "include/core/SkSamplingOptions.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkTileMode.h"
+#include "include/core/SkRect.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkPoint_impl.h"
 
 #include <iomanip>
 #include <chrono>
@@ -218,56 +217,123 @@ static void releaseProc(void* addr, void* ) {
     delete[] (uint32_t*) addr;
 }
 
-// https://fiddle.skia.org/c/@Canvas_drawVertices
+// https://fiddle.skia.org/c/@Canvas_getDeviceClipBounds
 void draw(SkCanvas* canvas) {
-    SkPaint paint;
-    SkPoint points[] = { { 0, 0 }, { 250, 0 }, { 100, 100 }, { 0, 250 } };
-    SkColor colors[] = { SK_ColorRED, SK_ColorBLUE, SK_ColorYELLOW, SK_ColorCYAN };
-    auto vertices = SkVertices::MakeCopy(SkVertices::kTriangleFan_VertexMode,
-            std::size(points), points, nullptr, colors);
-    canvas->drawVertices(vertices.get(), SkBlendMode::kDst, paint);
+    SkCanvas device(256, 256);
+    canvas = &device;
+
+    SkIRect bounds = canvas->getDeviceClipBounds();
+    SkDEBUGF("left:%d, top:%d, right:%d, bottom:%d\n", bounds.left(), bounds.top(), bounds.right(), bounds.bottom());
+
+    SkPoint clipPoints[] = {{30, 130}, {120, 130}, {120, 230}};
+    SkPath clipPath;
+    clipPath.addPoly(clipPoints, true);
+
+    canvas->save();
+    canvas->clipPath(clipPath);
+    bounds = canvas->getDeviceClipBounds();
+    SkDEBUGF("left:%d, top:%d, right:%d, bottom:%d\n", bounds.left(), bounds.top(), bounds.right(), bounds.bottom());
+
+    canvas->restore();
+    canvas->scale(1.f / 2.0, 1.f / 2.0);
+    canvas->clipPath(clipPath);
+    bounds = canvas->getDeviceClipBounds();
+    SkDEBUGF("left:%d, top:%d, right:%d, bottom:%d\n", bounds.left(), bounds.top(), bounds.right(), bounds.bottom());
 }
 
-// https://fiddle.skia.org/c/@Canvas_drawVertices_2
-void draw1(SkCanvas* canvas) {
-    SkPaint paint;
-    SkPoint points[] = { { 0, 0 }, { 250, 0 }, { 100, 100 }, { 0, 250 } };
-    // 并没有起作用
-    SkPoint texs[] = { { 0, 0 }, { 0, 250 }, { 250, 250 }, { 250, 0 } };
-    SkColor colors[] = { SK_ColorRED, SK_ColorBLUE, SK_ColorYELLOW, SK_ColorCYAN };
-    paint.setShader(SkGradientShader::MakeLinear(points, colors, nullptr, 4, SkTileMode::kClamp));
-    auto vertices = SkVertices::MakeCopy(SkVertices::kTriangleFan_VertexMode,
-            std::size(points), points, texs, colors);
-    canvas->drawVertices(vertices, SkBlendMode::kDstOut, paint);
+void draw1(SkCanvas *canvas) {
+    SkIRect bounds;
+    SkDebugf("device bounds empty = %s\n", canvas->getDeviceClipBounds(&bounds) ? "false" : "true");
+
+    SkPath path;
+    canvas->clipPath(path);
+
+    SkDebugf("device bounds empty = %s\n", canvas->getDeviceClipBounds(&bounds) ? "false" : "true");
 }
 
-void draw2(SkCanvas* canvas) {
-    SkPaint paint;
-    // SkImage::MakeFromBitmap -> SkImages::RasterFromBitmap
-    sk_sp<SkImage> image = SkImages::RasterFromBitmap(source);
-    paint.setShader(SkShaders::Image(image, SkTileMode::kClamp, SkTileMode::kClamp, SkSamplingOptions()));
-    SkPoint points[] = { { 0, 0 }, { 250, 0 }, { 100, 100 }, { 0, 250 } };
-    SkColor colors[] = { SkColorSetARGB(0xbe, 0xff, 0xff, 0xff),
-        SkColorSetARGB(0xbe, 0x00, 0x00, 0xFF),
-        SkColorSetARGB(0xbe, 0xFF, 0xFF, 0x00),
-        SkColorSetARGB(0xbe, 0x00, 0xFF, 0xFF)
-    };
-    auto vertices = SkVertices::MakeCopy(SkVertices::kTriangleFan_VertexMode,
-            std::size(points), points, nullptr, colors);
-    canvas->drawVertices(vertices.get(), SkBlendMode::kSrcOver, paint);
+// https://fiddle.skia.org/c/@Canvas_getLocalClipBounds
+void draw2(SkCanvas *canvas) {
+    SkCanvas local(256, 256);
+    canvas = &local;
+    SkRect bounds = canvas->getLocalClipBounds();
+    SkIRect deviceBounds = canvas->getDeviceClipBounds();
+    SkDebugf("Raw bounds:\n");
+    SkDebugf("[local ]left:%g  top:%g  right:%g  bottom:%g\n",
+            bounds.fLeft, bounds.fTop, bounds.fRight, bounds.fBottom);
+    SkDebugf("[device]left:%d, top:%d, right:%d, bottom:%d\n",
+        deviceBounds.left(), deviceBounds.top(), deviceBounds.right(), deviceBounds.bottom());
+
+    SkPoint clipPoints[]  = {{30, 130}, {120, 130}, {120, 230} };
+    SkPath clipPath;
+    clipPath.addPoly(clipPoints, true);
+    canvas->clipPath(clipPath);
+    bounds = canvas->getLocalClipBounds();
+    deviceBounds = canvas->getDeviceClipBounds();
+    SkDebugf("Clip path:\n");
+    SkDebugf("[local ]left:%g  top:%g  right:%g  bottom:%g\n",
+            bounds.fLeft, bounds.fTop, bounds.fRight, bounds.fBottom);
+    SkDebugf("[device]left:%d, top:%d, right:%d, bottom:%d\n",
+        deviceBounds.left(), deviceBounds.top(), deviceBounds.right(), deviceBounds.bottom());
+
+    canvas->save();
+    canvas->scale(0.5f, 0.5f);
+    bounds = canvas->getLocalClipBounds();
+    deviceBounds = canvas->getDeviceClipBounds();
+    SkDebugf("Scale:\n");
+    SkDebugf("[local ]left:%g  top:%g  right:%g  bottom:%g\n",
+            bounds.fLeft, bounds.fTop, bounds.fRight, bounds.fBottom);
+    SkDebugf("[device]left:%d, top:%d, right:%d, bottom:%d\n",
+        deviceBounds.left(), deviceBounds.top(), deviceBounds.right(), deviceBounds.bottom());
+
+    canvas->restore();
+    canvas->translate(10.f, 10.f);
+    bounds = canvas->getLocalClipBounds();
+    deviceBounds = canvas->getDeviceClipBounds();
+    SkDebugf("Restore:\n");
+    SkDebugf("[local ]left:%g  top:%g  right:%g  bottom:%g\n",
+            bounds.fLeft, bounds.fTop, bounds.fRight, bounds.fBottom);
+    SkDebugf("[device]left:%d, top:%d, right:%d, bottom:%d\n",
+        deviceBounds.left(), deviceBounds.top(), deviceBounds.right(), deviceBounds.bottom());
 }
 
-void draw3(SkCanvas* canvas) {
-    SkPaint paint;
-    // SkImage::MakeFromBitmap -> SkImages::RasterFromBitmap
-    sk_sp<SkImage> image = SkImages::RasterFromBitmap(source);
-    paint.setShader(SkShaders::Image(image, SkTileMode::kClamp, SkTileMode::kClamp, SkSamplingOptions()));
-    SkPoint points[] = { { 0, 0 }, { 250, 0 }, { 100, 100 }, { 0, 250 } };
-    SkColor colors[] = { SK_ColorRED, SK_ColorBLUE, SK_ColorYELLOW, SK_ColorCYAN };
-    auto vertices = SkVertices::MakeCopy(SkVertices::kTriangleFan_VertexMode,
-            std::size(points), points, nullptr, colors);
-    // paint is source
-    canvas->drawVertices(vertices.get(), SkBlendMode::kSrcOver, paint);
+// https://fiddle.skia.org/c/@Canvas_getLocalClipBounds_2
+void draw3(SkCanvas *canvas) {
+    SkCanvas local(256, 256);
+    canvas = &local;
+    SkRect bounds;
+    SkDebugf("local bounds empty = %s\n", canvas->getLocalClipBounds(&bounds)
+             ? "false" : "true");
+    SkPath path;
+    canvas->clipPath(path);
+    SkDebugf("local bounds empty = %s\n", canvas->getLocalClipBounds(&bounds)
+             ? "false" : "true");
+}
+
+// https://fiddle.skia.org/c/@Canvas_int_int_const_SkSurfaceProps_star
+void draw4(SkCanvas *) {
+    SkCanvas canvas(10,20);
+    canvas.clipRect(SkRect::MakeXYWH(30, 40, 5, 10));   // clip is outside canvas device
+    SkDebugf("canvas %s empty\n", canvas.getDeviceClipBounds().isEmpty() ? "is" : "is not");
+}
+
+// https://fiddle.skia.org/c/@Canvas_isClipEmpty
+void draw5(SkCanvas *canvas) {
+    SkDebugf("clip is%s empty\n", canvas->isClipEmpty() ? "" : " not");
+    SkIRect deviceBounds = canvas->getDeviceClipBounds();
+    SkDebugf("device bounds is [%d, %d]->[%d, %d]\n", deviceBounds.left(), deviceBounds.top(), deviceBounds.right(), deviceBounds.bottom());
+    SkRect localBounds = canvas->getLocalClipBounds();
+    SkDebugf("local bounds is [%g, %g]->[%g, %g]\n", localBounds.fLeft, localBounds.fTop, localBounds.fRight, localBounds.fBottom);
+    SkPath path;
+    canvas->clipPath(path);
+    SkDebugf("clip is%s empty\n", canvas->isClipEmpty() ? "" : " not");
+}
+
+// https://fiddle.skia.org/c/@Canvas_isClipRect
+void draw6(SkCanvas *canvas) {
+    SkDebugf("clip is%s rect\n", canvas->isClipRect() ? "" : " not");
+    canvas->clipRect({0, 0, 0, 0});
+    SkDebugf("clip is%s empty\n", canvas->isClipEmpty() ? "" : " not");
+    SkDebugf("clip is%s rect\n", canvas->isClipRect() ? "" : " not");
 }
 
 int main(int argc, char* argv[]) {
@@ -341,7 +407,7 @@ int main(int argc, char* argv[]) {
     canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
 
-   draw2(canvas);
+   draw6(canvas);
 
     if (SAVE_SKP) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();

@@ -28,13 +28,15 @@
 // added and open the SK_DEBUG for SkRefCnt.h:166: fatal error: "assertf(rc == 1): NVRefCnt was 0"
 #include "Skia/include/config/SkUserConfig.h"
 #include "Skia/include/core/SkColorSpace.h"
-#include "Skia/include/core/SkPaint.h"
 #include "Skia/include/core/SkPath.h"
-#include "Skia/include/core/SkFont.h"
 #include "Skia/include/core/SkRRect.h"
 #include "Skia/include/core/SkDrawable.h"
-#include "Skia/include/core/SkVertices.h"
-#include "Skia/include/effects/SkGradientShader.h"
+#include "Skia/include/core/SkShader.h"
+#include "Skia/include/core/SkRect.h"
+#include "Skia/include/core/SkImageFilter.h"
+#include "Skia/include/core/SkMatrix.h"
+#include "Skia/include/core/SkPaint.h"
+#include "Skia/include/effects/SkImageFilters.h"
 
 #include <GL/gl.h>
 #include <GL/glx.h>
@@ -49,8 +51,6 @@
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
 #include "include/core/SkSamplingOptions.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkTileMode.h"
 
 #include <iomanip>
 #include <chrono>
@@ -218,56 +218,21 @@ static void releaseProc(void* addr, void* ) {
     delete[] (uint32_t*) addr;
 }
 
-// https://fiddle.skia.org/c/@Canvas_drawVertices
+// https://fiddle.skia.org/c/@Canvas_kInitWithPrevious_SaveLayerFlag
 void draw(SkCanvas* canvas) {
-    SkPaint paint;
-    SkPoint points[] = { { 0, 0 }, { 250, 0 }, { 100, 100 }, { 0, 250 } };
-    SkColor colors[] = { SK_ColorRED, SK_ColorBLUE, SK_ColorYELLOW, SK_ColorCYAN };
-    auto vertices = SkVertices::MakeCopy(SkVertices::kTriangleFan_VertexMode,
-            std::size(points), points, nullptr, colors);
-    canvas->drawVertices(vertices.get(), SkBlendMode::kDst, paint);
-}
+    SkPaint redPaint, bluePaint, scalePaint;
+    redPaint.setColor(SK_ColorRED);
+    canvas->drawCircle(21, 21, 8, redPaint);
+    bluePaint.setColor(SK_ColorBLUE);
+    canvas->drawCircle(31, 21, 8, bluePaint);
 
-// https://fiddle.skia.org/c/@Canvas_drawVertices_2
-void draw1(SkCanvas* canvas) {
-    SkPaint paint;
-    SkPoint points[] = { { 0, 0 }, { 250, 0 }, { 100, 100 }, { 0, 250 } };
-    // 并没有起作用
-    SkPoint texs[] = { { 0, 0 }, { 0, 250 }, { 250, 250 }, { 250, 0 } };
-    SkColor colors[] = { SK_ColorRED, SK_ColorBLUE, SK_ColorYELLOW, SK_ColorCYAN };
-    paint.setShader(SkGradientShader::MakeLinear(points, colors, nullptr, 4, SkTileMode::kClamp));
-    auto vertices = SkVertices::MakeCopy(SkVertices::kTriangleFan_VertexMode,
-            std::size(points), points, texs, colors);
-    canvas->drawVertices(vertices, SkBlendMode::kDstOut, paint);
-}
-
-void draw2(SkCanvas* canvas) {
-    SkPaint paint;
-    // SkImage::MakeFromBitmap -> SkImages::RasterFromBitmap
-    sk_sp<SkImage> image = SkImages::RasterFromBitmap(source);
-    paint.setShader(SkShaders::Image(image, SkTileMode::kClamp, SkTileMode::kClamp, SkSamplingOptions()));
-    SkPoint points[] = { { 0, 0 }, { 250, 0 }, { 100, 100 }, { 0, 250 } };
-    SkColor colors[] = { SkColorSetARGB(0xbe, 0xff, 0xff, 0xff),
-        SkColorSetARGB(0xbe, 0x00, 0x00, 0xFF),
-        SkColorSetARGB(0xbe, 0xFF, 0xFF, 0x00),
-        SkColorSetARGB(0xbe, 0x00, 0xFF, 0xFF)
-    };
-    auto vertices = SkVertices::MakeCopy(SkVertices::kTriangleFan_VertexMode,
-            std::size(points), points, nullptr, colors);
-    canvas->drawVertices(vertices.get(), SkBlendMode::kSrcOver, paint);
-}
-
-void draw3(SkCanvas* canvas) {
-    SkPaint paint;
-    // SkImage::MakeFromBitmap -> SkImages::RasterFromBitmap
-    sk_sp<SkImage> image = SkImages::RasterFromBitmap(source);
-    paint.setShader(SkShaders::Image(image, SkTileMode::kClamp, SkTileMode::kClamp, SkSamplingOptions()));
-    SkPoint points[] = { { 0, 0 }, { 250, 0 }, { 100, 100 }, { 0, 250 } };
-    SkColor colors[] = { SK_ColorRED, SK_ColorBLUE, SK_ColorYELLOW, SK_ColorCYAN };
-    auto vertices = SkVertices::MakeCopy(SkVertices::kTriangleFan_VertexMode,
-            std::size(points), points, nullptr, colors);
-    // paint is source
-    canvas->drawVertices(vertices.get(), SkBlendMode::kSrcOver, paint);
+    SkMatrix matrix;
+    matrix.setScale(4.0f, 4.f);
+    scalePaint.setAlpha(0x40);
+    scalePaint.setImageFilter(SkImageFilters::MatrixTransform(matrix, SkSamplingOptions(), nullptr));
+    SkCanvas::SaveLayerRec saveLayerRec(nullptr, &scalePaint, SkCanvas::kInitWithPrevious_SaveLayerFlag);
+    canvas->saveLayer(saveLayerRec);
+    canvas->restore();
 }
 
 int main(int argc, char* argv[]) {
@@ -341,7 +306,7 @@ int main(int argc, char* argv[]) {
     canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
 
-   draw2(canvas);
+   draw(canvas);
 
     if (SAVE_SKP) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();

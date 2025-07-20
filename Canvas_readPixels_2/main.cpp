@@ -28,13 +28,12 @@
 // added and open the SK_DEBUG for SkRefCnt.h:166: fatal error: "assertf(rc == 1): NVRefCnt was 0"
 #include "Skia/include/config/SkUserConfig.h"
 #include "Skia/include/core/SkColorSpace.h"
-#include "Skia/include/core/SkPaint.h"
 #include "Skia/include/core/SkPath.h"
-#include "Skia/include/core/SkFont.h"
 #include "Skia/include/core/SkRRect.h"
 #include "Skia/include/core/SkDrawable.h"
-#include "Skia/include/core/SkVertices.h"
-#include "Skia/include/effects/SkGradientShader.h"
+#include "Skia/include/core/SkShader.h"
+#include "Skia/include/core/SkRect.h"
+#include "Skia/include/private/base/SkDebug.h"
 
 #include <GL/gl.h>
 #include <GL/glx.h>
@@ -48,9 +47,8 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
-#include "include/core/SkSamplingOptions.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkTileMode.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPixmap.h"
 
 #include <iomanip>
 #include <chrono>
@@ -218,56 +216,51 @@ static void releaseProc(void* addr, void* ) {
     delete[] (uint32_t*) addr;
 }
 
-// https://fiddle.skia.org/c/@Canvas_drawVertices
+// https://fiddle.skia.org/c/@Canvas_readPixels_2
 void draw(SkCanvas* canvas) {
-    SkPaint paint;
-    SkPoint points[] = { { 0, 0 }, { 250, 0 }, { 100, 100 }, { 0, 250 } };
-    SkColor colors[] = { SK_ColorRED, SK_ColorBLUE, SK_ColorYELLOW, SK_ColorCYAN };
-    auto vertices = SkVertices::MakeCopy(SkVertices::kTriangleFan_VertexMode,
-            std::size(points), points, nullptr, colors);
-    canvas->drawVertices(vertices.get(), SkBlendMode::kDst, paint);
+    canvas->clear(0x8055aaff);
+    uint32_t pixels[1] = {0};
+    SkPixmap pixmap(SkImageInfo::MakeN32Premul(1, 1), pixels, 4);
+    canvas->readPixels(pixmap, 0, 0);
+    SkDebugf("pixel = %08x\n", pixels[0]);
 }
 
-// https://fiddle.skia.org/c/@Canvas_drawVertices_2
-void draw1(SkCanvas* canvas) {
-    SkPaint paint;
-    SkPoint points[] = { { 0, 0 }, { 250, 0 }, { 100, 100 }, { 0, 250 } };
-    // 并没有起作用
-    SkPoint texs[] = { { 0, 0 }, { 0, 250 }, { 250, 250 }, { 250, 0 } };
-    SkColor colors[] = { SK_ColorRED, SK_ColorBLUE, SK_ColorYELLOW, SK_ColorCYAN };
-    paint.setShader(SkGradientShader::MakeLinear(points, colors, nullptr, 4, SkTileMode::kClamp));
-    auto vertices = SkVertices::MakeCopy(SkVertices::kTriangleFan_VertexMode,
-            std::size(points), points, texs, colors);
-    canvas->drawVertices(vertices, SkBlendMode::kDstOut, paint);
+// https://fiddle.skia.org/c/@Canvas_readPixels_3
+void draw1(SkCanvas *canvas) {
+    canvas->clear(0x8055aaff);
+    SkBitmap bitmap;
+    bitmap.allocPixels(SkImageInfo::MakeN32Premul(1, 1));
+    canvas->readPixels(bitmap, 0, 0);
+    SkDebugf("pixel = %08x\n", bitmap.getAddr32(0, 0)[0]);
 }
 
-void draw2(SkCanvas* canvas) {
+// https://fiddle.skia.org/c/@Canvas_readPixels_a
+void draw2(SkCanvas *canvas) {
+    canvas->clear(SK_ColorBLUE);
     SkPaint paint;
-    // SkImage::MakeFromBitmap -> SkImages::RasterFromBitmap
-    sk_sp<SkImage> image = SkImages::RasterFromBitmap(source);
-    paint.setShader(SkShaders::Image(image, SkTileMode::kClamp, SkTileMode::kClamp, SkSamplingOptions()));
-    SkPoint points[] = { { 0, 0 }, { 250, 0 }, { 100, 100 }, { 0, 250 } };
-    SkColor colors[] = { SkColorSetARGB(0xbe, 0xff, 0xff, 0xff),
-        SkColorSetARGB(0xbe, 0x00, 0x00, 0xFF),
-        SkColorSetARGB(0xbe, 0xFF, 0xFF, 0x00),
-        SkColorSetARGB(0xbe, 0x00, 0xFF, 0xFF)
-    };
-    auto vertices = SkVertices::MakeCopy(SkVertices::kTriangleFan_VertexMode,
-            std::size(points), points, nullptr, colors);
-    canvas->drawVertices(vertices.get(), SkBlendMode::kSrcOver, paint);
+    canvas->drawCircle(32, 32, 28, paint);
+    SkImageInfo info = SkImageInfo::Make(64, 64, kBGRA_8888_SkColorType, kPremul_SkAlphaType);
+    sk_sp<SkData> data(SkData::MakeUninitialized(info.minRowBytes() * info.height()));
+    for (int x : {32, -32}) {
+        for (int y : {32, -32}) {
+            canvas->readPixels(info, data->writable_data(), info.minRowBytes(), x, y);
+        }
+    }
+
+    sk_sp<SkImage> image = SkImages::RasterFromData(info, data, info.minRowBytes());
+    canvas->drawImage(image, 0, 0);
 }
 
-void draw3(SkCanvas* canvas) {
-    SkPaint paint;
-    // SkImage::MakeFromBitmap -> SkImages::RasterFromBitmap
-    sk_sp<SkImage> image = SkImages::RasterFromBitmap(source);
-    paint.setShader(SkShaders::Image(image, SkTileMode::kClamp, SkTileMode::kClamp, SkSamplingOptions()));
-    SkPoint points[] = { { 0, 0 }, { 250, 0 }, { 100, 100 }, { 0, 250 } };
-    SkColor colors[] = { SK_ColorRED, SK_ColorBLUE, SK_ColorYELLOW, SK_ColorCYAN };
-    auto vertices = SkVertices::MakeCopy(SkVertices::kTriangleFan_VertexMode,
-            std::size(points), points, nullptr, colors);
-    // paint is source
-    canvas->drawVertices(vertices.get(), SkBlendMode::kSrcOver, paint);
+// https://fiddle.skia.org/c/@Canvas_readPixels_b
+void draw3(SkCanvas *canvas) {
+    canvas->clear(0x8055aaff);
+    for (SkAlphaType alphaType : { kPremul_SkAlphaType, kUnpremul_SkAlphaType } ) {
+        uint32_t pixel = 0;
+        SkImageInfo info = SkImageInfo::Make(1, 1, kBGRA_8888_SkColorType, alphaType);
+        if (canvas->readPixels(info, &pixel, 4, 0, 0)) {
+            SkDebugf("pixel = %08x\n", pixel);
+        }
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -341,7 +334,7 @@ int main(int argc, char* argv[]) {
     canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
 
-   draw2(canvas);
+   draw3(canvas);
 
     if (SAVE_SKP) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();
