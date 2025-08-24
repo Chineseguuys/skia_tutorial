@@ -49,6 +49,7 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
+#include "include/core/SkRect.h"
 
 #include <iomanip>
 #include <chrono>
@@ -63,8 +64,6 @@
 #endif
 
 #include "backward.hpp"
-
-#define DRAW_NO(_number) draw##_number
 
 static sk_sp<SkFontMgr> fontMgr;
 static sk_sp<SkTypeface> typeFace;
@@ -251,6 +250,40 @@ void draw1(SkCanvas* canvas) {
     }
 }
 
+void draw2(SkCanvas* canvas) {
+    SkPaint paint;
+    SkPaint ovalPaint;
+    ovalPaint.setAntiAlias(false);
+    ovalPaint.setStyle(SkPaint::kStroke_Style);
+    ovalPaint.setStrokeWidth(2);
+    ovalPaint.setColor(SK_ColorRED);
+
+    paint.setAntiAlias(false);
+
+    SkRect oval = SkRect::MakeXYWH(50, 50, 150, 50);
+
+    canvas->drawOval(oval, ovalPaint);
+    canvas->drawArc(oval, 0, 90, true, paint);
+}
+
+void draw3(SkCanvas* canvas) {
+    SkPaint paint;
+    SkPaint ovalPaint;
+    ovalPaint.setAntiAlias(false);
+    ovalPaint.setStyle(SkPaint::kStroke_Style);
+    ovalPaint.setStrokeWidth(2);
+    ovalPaint.setColor(SK_ColorRED);
+    paint.setAntiAlias(false);
+    SkRect oval = SkRect::MakeXYWH(50, 50, 150, 50);
+
+    canvas->drawOval(oval, ovalPaint);
+    SkPath path;
+    path.arcTo(oval, 0, 90, false);
+    path.close();
+
+    canvas->drawPath(path, paint);
+}
+
 int main(int argc, char* argv[]) {
 #if 1
     spdlog::set_level(spdlog::level::debug);
@@ -322,7 +355,7 @@ int main(int argc, char* argv[]) {
     canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
 
-   DRAW_NO(1)(canvas);
+   draw2(canvas);
 
     if (SAVE_SKP) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();
