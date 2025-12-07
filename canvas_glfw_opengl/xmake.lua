@@ -29,15 +29,15 @@ target("main")
     add_files("main.cpp")
 
     -- 配置头文件搜索路径（使用绝对路径更可靠）
-    add_includedirs("/home/yanjiangha/Android/", "/home/yanjiangha/Android/Skia")
+    add_includedirs("/home/yanjiangha/mirrors/sda1_doc/temp_storage/", "/home/yanjiangha/mirrors/sda1_doc/temp_storage/skia/")
     add_includedirs("../common/")
 
     -- 配置库文件搜索路径
     add_linkdirs(
-        "/home/yanjiangha/Android/Skia/lib/Shared/", {force = true}
+        "/home/yanjiangha/mirrors/sda1_doc/temp_storage/skia/out/Shared/", {force = true}
     )
 
-    add_rpathdirs("/home/yanjiangha/Android/Skia/lib/Shared/")
+    add_rpathdirs("/home/yanjiangha/mirrors/sda1_doc/temp_storage/skia/out/Shared/")
 
     -- 链接 skia 库
     add_links("skia", "skshaper", "skunicode_core", "skunicode_icu", "skparagraph")

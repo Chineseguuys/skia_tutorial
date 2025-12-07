@@ -4,51 +4,56 @@
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
-#include "GL/glext.h"
-#include "Skia/include/gpu/GrBackendSurface.h"
-#include "Skia/include/gpu/ganesh/GrDriverBugWorkarounds.h"
-#include "Skia/include/gpu/ganesh/gl/GrGLDirectContext.h"
-#include "Skia/include/gpu/GrDirectContext.h"
-#include "Skia/include/gpu/gl/GrGLInterface.h"
-#include "Skia/include/gpu/ganesh/SkSurfaceGanesh.h"
-#include "Skia/include/gpu/ganesh/gl/GrGLBackendSurface.h"
-#include "Skia/include/gpu/ganesh/gl/GrGLTypes.h"
-#include "Skia/include/gpu/ganesh/gl/GrGLAssembleInterface.h"
 
-#include "Skia/include/core/SkCanvas.h"
-#include "Skia/include/core/SkSurface.h"
-#include "Skia/include/core/SkStream.h"
-#include "Skia/include/core/SkPictureRecorder.h"
-#include "Skia/include/core/SkPicture.h"
-#include "Skia/include/core/SkBitmap.h"
-#include "Skia/include/encode/SkPngEncoder.h"
-
-#include "Skia/include/core/SkTypeface.h"
-#include "Skia/include/core/SkFontMgr.h"
-#include "Skia/include/ports/SkFontMgr_empty.h"
-#include "Skia/include/ports/SkFontMgr_directory.h"
-
-#include "Skia/include/core/SkTextBlob.h"
-#include "Skia/include/core/SkData.h"
-
-#include "Skia/include/codec/SkCodec.h"
-#include "Skia/include/core/SkAlphaType.h"
-#include "Skia/include/core/SkColorType.h"
-#include "Skia/include/core/SkImageInfo.h"
-#include "Skia/include/core/SkImage.h"
-
-#include "Skia/include/core/SkTextBlob.h"
-#include "Skia/include/core/SkRefCnt.h"
-
-
-#include "Skia/include/core/SkColor.h"
+#include "skia/include/core/SkCanvas.h"
+#include "skia/include/core/SkSurface.h"
+#include "skia/include/core/SkStream.h"
+#include "skia/include/core/SkPictureRecorder.h"
+#include "skia/include/core/SkPicture.h"
+#include "skia/include/core/SkBitmap.h"
+#include "skia/include/core/SkTypeface.h"
+#include "skia/include/core/SkFontMgr.h"
+#include "skia/include/core/SkData.h"
+#include "skia/include/core/SkAlphaType.h"
+#include "skia/include/core/SkColorType.h"
+#include "skia/include/core/SkImageInfo.h"
+#include "skia/include/core/SkImage.h"
+#include "skia/include/core/SkRefCnt.h"
+#include "skia/include/core/SkColor.h"
 // added and open the SK_DEBUG for SkRefCnt.h:166: fatal error: "assertf(rc == 1): NVRefCnt was 0"
 // #include "Skia/include/config/SkUserConfig.h"
-#include "Skia/include/core/SkColorSpace.h"
-#include "Skia/include/core/SkPaint.h"
-#include "Skia/include/core/SkPath.h"
-#include "Skia/include/core/SkFont.h"
-#include "Skia/include/core/SkDrawable.h"
+#include "skia/include/core/SkColorSpace.h"
+#include "skia/include/core/SkPaint.h"
+#include "skia/include/core/SkPath.h"
+#include "skia/include/core/SkFont.h"
+#include "skia/include/core/SkDrawable.h"
+#include "skia/include/core/SkRect.h"
+#include "skia/include/core/SkSurfaceProps.h"
+
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrContextThreadSafeProxy.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
+
+#include "skia/include/gpu/ganesh/gl/GrGLTypes.h"
+
+#include "skia/include/codec/SkCodec.h"
+#include "skia/include/encode/SkPngEncoder.h"
+#include "skia/include/ports/SkFontMgr_empty.h"
+#include "skia/include/ports/SkFontMgr_directory.h"
+
+#ifdef SK_GL
+#include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
+#include "include/gpu/ganesh/gl/GrGLTypes.h"
+#include "include/gpu/ganesh/gl/GrGLInterface.h"
+#include "include/gpu/ganesh/gl/GrGLAssembleInterface.h"
+#include "include/gpu/ganesh/gl/GrGLDirectContext.h"
+// #include "src/gpu/ganesh/gl/GrGLDefines.h"
+#endif  // end SK_GL
+
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <GL/glu.h>
@@ -61,12 +66,6 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkSurfaceProps.h"
-#include "include/gpu/GrContextOptions.h"
-#include "include/gpu/GrTypes.h"
-#include "include/gpu/gl/GrGLTypes.h"
-#include "include/private/base/SkDebug.h"
 
 #include <iomanip>
 #include <chrono>
@@ -79,8 +78,6 @@
 #undef Success
 #include "CLI/CLI.hpp"
 #endif
-
-#include "backward.hpp"
 
 #define DRAW_NO(_number) draw##_number
 
@@ -367,11 +364,19 @@ int main(int argc, char* argv[]) {
     SkColorType surfaceColorType = SkColorType::kRGBA_8888_SkColorType;
     sk_sp<SkColorSpace> surfaceColorSpace = SkColorSpace::MakeSRGB();
  
-    sk_sp<SkSurface> skSurface;
+    sk_sp<SkSurface> skSurface = nullptr;
+    int oldWidth = 0;
+    int oldHeight = 0;
+
     auto rebuildSurface = [&]() {
         int width, height;
         glfwGetFramebufferSize(window, &width, &height);
         //glViewport(0, 0, width, height);
+        if (skSurface && oldWidth == width && oldHeight == height) {
+            return true;
+        }
+        oldWidth = width;
+        oldHeight = height;
 
         spdlog::debug("glfw frame buffer size = [{}, {}]", width, height);
         GrGLFramebufferInfo fbInfo;
@@ -385,9 +390,15 @@ int main(int argc, char* argv[]) {
         } else if (surfaceColorType == kAlpha_8_SkColorType) {
             fbInfo.fFormat = GL_R8;
         }
+        fbInfo.fProtected = skgpu::Protected::kNo;
 
-        SkSurfaceProps props(0, kUnknown_SkPixelGeometry);
-        auto backendRT = GrBackendRenderTargets::MakeGL(width, height, 0, STENCIL_BUFFER_SIZE, fbInfo);
+        SkSurfaceProps props(0x00, kUnknown_SkPixelGeometry);
+        GrBackendRenderTarget backendRT =
+                    GrBackendRenderTargets::MakeGL(width, height, 0, 8, fbInfo);
+        if (!backendRT.isValid()) {
+            spdlog::error("can not create backend render target for skia surface!");
+            return false;
+        }
         skSurface = SkSurfaces::WrapBackendRenderTarget(grContext.get(), backendRT,
             kBottomLeft_GrSurfaceOrigin, surfaceColorType, surfaceColorSpace, &props);
         spdlog::debug("WrapBackendRenderTarget returned {}", fmt::ptr(skSurface.get()));
@@ -429,7 +440,7 @@ int main(int argc, char* argv[]) {
 
         canvas->drawRoundRect(SkRect::MakeXYWH(50, 50, 600, 400), 30, 30, paint);
         // Todo: Why Skia/include/gpu/GrDirectContext.h:334:(.text._ZN15GrDirectContext14flushAndSubmitE9GrSyncCpu[_ZN15GrDirectContext14flushAndSubmitE9GrSyncCpu]+0x7d): undefined reference to `GrDirectContext::submit(GrSyncCpu)'
-        grContext->flushAndSubmit();
+        grContext->flushAndSubmit(GrSyncCpu::kYes);
         //grContext->flush();
         //skgpu::ganesh::FlushAndSubmit(skSurface);
 
