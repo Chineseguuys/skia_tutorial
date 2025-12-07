@@ -67,23 +67,21 @@
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
 
-
-#include "GLFW/glfw3.h"
-
 #include <iomanip>
 #include <chrono>
 #include <sstream>
 #include <string>
 #include <sys/types.h>
+#include <utility>
 #include <vector>
+
+#include "GLXContext.h"
 
 // modified for compile error
 #ifdef Success
 #undef Success
 #include "CLI/CLI.hpp"
 #endif
-
-#include "backward.hpp"
 
 static sk_sp<SkFontMgr> fontMgr;
 static sk_sp<SkTypeface> typeFace;
@@ -107,38 +105,6 @@ static const std::vector<std::string> rgbaRawResources = {
     "../resources/@5@layer@99@3008x2120_bpp_1.raw"
 };
 static const std::string fontDir = "../fonts/";
-
-/* This struct is taken from a mesa demo.  Please update as required */
-static const std::vector<std::pair<int, int>> gl_versions = {
-   {1, 0},
-   {1, 1},
-   {1, 2},
-   {1, 3},
-   {1, 4},
-   {1, 5},
-   {2, 0},
-   {2, 1},
-   {3, 0},
-   {3, 1},
-   {3, 2},
-   {3, 3},
-   {4, 0},
-   {4, 1},
-   {4, 2},
-   {4, 3},
-   {4, 4},
-};
-
-static const std::vector<std::pair<int, int>> gles_versions = {
-    {2, 0},
-    {3, 0},
-};
-
-static bool ctxErrorOccurred = false;
-static int ctxErrorHandler(Display *dpy, XErrorEvent *ev) {
-    ctxErrorOccurred = true;
-    return 0;
-}
 
 std::string generate_filename(const std::string& prefix, const std::string& postfix) {
     // 获取当前系统时间
@@ -379,74 +345,191 @@ private:
     int mCanvasHeight = 0;
 };
 
-static Display* get_display() {
-    class AutoDisplay {
-    public:
-        AutoDisplay() { fDisplay = XOpenDisplay(nullptr); }
-        ~AutoDisplay() {
-            if (fDisplay) {
-                XCloseDisplay(fDisplay);
+class KaleidoscopeEffect {
+public:
+    static constexpr const char* skShaderCode = R"(
+        uniform float2 iResolution;      // Viewport resolution (pixels)
+        uniform float  iTime;            // Shader playback time (s)
+
+        mat2 rotate2D(float r){
+            return mat2(cos(r), sin(r), -sin(r), cos(r));
+        }
+
+        mat3 rotate3D(float angle, vec3 axis){
+            vec3 a = normalize(axis);
+            float s = sin(angle);
+            float c = cos(angle);
+            float r = 1.0 - c;
+            return mat3(
+                a.x * a.x * r + c,
+                a.y * a.x * r + a.z * s,
+                a.z * a.x * r - a.y * s,
+                a.x * a.y * r - a.z * s,
+                a.y * a.y * r + c,
+                a.z * a.y * r + a.x * s,
+                a.x * a.z * r + a.y * s,
+                a.y * a.z * r - a.x * s,
+                a.z * a.z * r + c
+            );
+        }
+
+        half4 main(float2 FC) {
+        vec4 o = vec4(0);
+        vec2 r = iResolution.xy;
+        vec3 v = vec3(1,3,7), p = vec3(0);
+        float t=iTime, n=0, e=0, g=0, k=t*.2;
+        for (float i=0; i<100; ++i) {
+            p = vec3((FC.xy-r*.5)/r.y*g,g)*rotate3D(k,cos(k+v));
+            p.z += t;
+            p = asin(sin(p)) - 3.;
+            n = 0;
+            for (float j=0; j<9.; ++j) {
+            p.xz *= rotate2D(g/8.);
+            p = abs(p);
+            p = p.x<p.y ? n++, p.zxy : p.zyx;
+            p += p-v;
             }
+            g += e = max(p.x,p.z) / 1e3 - .01;
+            o.rgb += .1/exp(cos(v*g*.1+n)+3.+1e4*e);
         }
-        Display* display() const { return fDisplay; }
-    private:
-        Display* fDisplay;
+        return o.xyz1;
+        }
+    )";
+
+    struct Uniform {
+        std::string sName;
+        std::vector<uint8_t> sData;
     };
-    static std::unique_ptr<AutoDisplay> ad;
-    static SkOnce once;
-    once([] { ad = std::make_unique<AutoDisplay>(); });
-    return ad->display();
-}
 
-GLXContext CreateBestContext(bool isES, Display* display, GLXFBConfig bestFbc,
-                                               GLXContext glxShareContext) {
-    auto glXCreateContextAttribsARB = (PFNGLXCREATECONTEXTATTRIBSARBPROC)
-        glXGetProcAddressARB((const GrGLubyte*)"glXCreateContextAttribsARB");
-    if (!glXCreateContextAttribsARB) {
-        SkDebugf("Failed to get address of glXCreateContextAttribsARB");
-        return nullptr;
+    void initlize(int width, int height) {
+        mCanvasWidth = width;
+        mCanvasHeight = height;
     }
-    GLXContext context = nullptr;
-    // Install Xlib error handler that will set ctxErrorOccurred.
-    // WARNING: It is global for all threads.
-    ctxErrorOccurred = false;
-    int (*oldHandler)(Display*, XErrorEvent*) = XSetErrorHandler(&ctxErrorHandler);
 
-    auto versions = isES ? gles_versions : gl_versions;
-    // Well, unfortunately GLX will not just give us the highest context so
-    // instead we have to do this nastiness
-    for (int i = versions.size() - 1; i >= 0 ; i--) {
-        // WARNING: Don't try to optimize this and make this array static. The
-        // glXCreateContextAttribsARB call writes to it upon failure and the
-        // next call would fail too.
-        std::vector<int> flags = {
-            GLX_CONTEXT_MAJOR_VERSION_ARB, versions[i].first,
-            GLX_CONTEXT_MINOR_VERSION_ARB, versions[i].second,
-        };
-        if (isES) {
-            flags.push_back(GLX_CONTEXT_PROFILE_MASK_ARB);
-            // the ES2 flag should work even for higher versions
-            flags.push_back(GLX_CONTEXT_ES2_PROFILE_BIT_EXT);
-        } else if (versions[i].first > 2) {
-            flags.push_back(GLX_CONTEXT_PROFILE_MASK_ARB);
-            flags.push_back(GLX_CONTEXT_CORE_PROFILE_BIT_ARB);
+    void draw(SkCanvas* canvas, float time) {
+        // Implementation similar to PlusingCircleEffect
+        SkRuntimeEffect::Result result = SkRuntimeEffect::MakeForShader(SkString(skShaderCode));
+        if (!result.effect) {
+            spdlog::error("{}: can not create runtime effect!", __FUNCTION__);
+            return;
         }
-        flags.push_back(0);
-        context = glXCreateContextAttribsARB(display, bestFbc, glxShareContext, true,
-                                             &flags[0]);
-        // Sync to ensure any errors generated are processed.
-        XSync(display, False);
 
-        if (!ctxErrorOccurred && context) {
-            break;
+        Uniform uniform;
+        uniform.sName = "iTime";
+        uniform.sData.resize(sizeof(float));
+        std::memcpy(uniform.sData.data(), &time, sizeof(float));
+
+        SkPoint resolution = SkPoint::Make((float)mCanvasWidth, (float)mCanvasHeight);
+        Uniform resolutionUniform;
+        resolutionUniform.sName = "iResolution";
+        resolutionUniform.sData.resize(sizeof(SkPoint));
+        std::memcpy(resolutionUniform.sData.data(), &resolution, sizeof(SkPoint));
+        SkRuntimeShaderBuilder shaderBuilder(result.effect);
+        shaderBuilder.uniform(uniform.sName.c_str())
+            .set(uniform.sData.data(), uniform.sData.size());
+        shaderBuilder.uniform(resolutionUniform.sName.c_str())
+            .set(resolutionUniform.sData.data(), resolutionUniform.sData.size());
+        
+        sk_sp<SkShader> shader = shaderBuilder.makeShader(nullptr);
+        if (!shader) {
+            spdlog::error("{}: can not create runtime shader!", __FUNCTION__);
+            return; 
         }
-        // try again
-        ctxErrorOccurred = false;
+        SkPaint paint;
+        paint.setShader(shader);
+        canvas->drawRect(SkRect::MakeWH(mCanvasWidth, mCanvasHeight), paint);
     }
-    // Restore the original error handler.
-    XSetErrorHandler(oldHandler);
-    return context;
-}
+
+private:
+    int mCanvasWidth = 0;
+    int mCanvasHeight = 0;
+};
+
+// 分形
+class FractalEffect {
+public:
+    static constexpr const char* skShaderCode = R"(
+        uniform float2 iResolution;      // Viewport resolution (pixels)
+        uniform float  iTime;            // Shader playback time (s)
+
+        float julia(vec2 uv, vec2 c) {
+            const float maxSteps = 400;
+            for (float i = 0; i < maxSteps; i++) {
+                uv = vec2(uv.x * uv.x - uv.y * uv.y + c.x,
+                        2.0 * uv.x * uv.y + c.y);
+                if (length(uv) > 2) {
+                    return i / maxSteps;
+                }
+            }
+            return 1.0;
+        }
+
+
+        vec4 main( in vec2 fragCoord )
+        {
+            // Normalized pixel coordinates (from 0 to 1)
+            vec2 uv = -1.0 + 2.0 * fragCoord / iResolution.xy;
+
+            float aspect = iResolution.x / iResolution.y;
+            uv.x *= aspect;
+
+            uv *= pow(0.5, -1.0 + 15.0 * (0.5 + 0.5 * sin(iTime * 0.80 - (3.14159265))));
+            uv += vec2(-0.51, -0.61351); // an interesting coordinate to zoom in on 
+            float f = julia(vec2(0.0, 0.0), uv);
+            
+            // Output to screen
+            return vec4((1.0 - uv) * pow(f, 0.5), f, 1.0);
+        }
+    )";
+
+    struct Uniform {
+        std::string sName;
+        std::vector<uint8_t> sData;
+    };
+
+    void initlize(int width, int height) {
+        mCanvasWidth = width;
+        mCanvasHeight = height;
+    }
+
+    void draw(SkCanvas* canvas, float time) {
+        // Implementation similar to PlusingCircleEffect
+        SkRuntimeEffect::Result result = SkRuntimeEffect::MakeForShader(SkString(skShaderCode));
+        if (!result.effect) {
+            spdlog::error("{}: can not create runtime effect!", __FUNCTION__);
+            return;
+        }
+
+        Uniform uniform;
+        uniform.sName = "iTime";
+        uniform.sData.resize(sizeof(float));
+        std::memcpy(uniform.sData.data(), &time, sizeof(float));
+
+        SkPoint resolution = SkPoint::Make((float)mCanvasWidth, (float)mCanvasHeight);
+        Uniform resolutionUniform;
+        resolutionUniform.sName = "iResolution";
+        resolutionUniform.sData.resize(sizeof(SkPoint));
+        std::memcpy(resolutionUniform.sData.data(), &resolution, sizeof(SkPoint));
+        SkRuntimeShaderBuilder shaderBuilder(result.effect);
+        shaderBuilder.uniform(uniform.sName.c_str())
+            .set(uniform.sData.data(), uniform.sData.size());
+        shaderBuilder.uniform(resolutionUniform.sName.c_str())
+            .set(resolutionUniform.sData.data(), resolutionUniform.sData.size());
+
+        sk_sp<SkShader> shader = shaderBuilder.makeShader(nullptr);
+        if (!shader) {
+            spdlog::error("{}: can not create runtime shader!", __FUNCTION__);
+            return; 
+        }
+        SkPaint paint;
+        paint.setShader(shader);
+        canvas->drawRect(SkRect::MakeWH(mCanvasWidth, mCanvasHeight), paint);
+    }
+
+private:
+    int mCanvasWidth = 0;
+    int mCanvasHeight = 0;
+};
 
 int main(int argc, char* argv[]) {
 #if 1
@@ -497,148 +580,16 @@ int main(int argc, char* argv[]) {
         spdlog::error("{}: can not create type face from font manager!", __FUNCTION__);
     }
 
-    // --------------- init opengl ---------
-    // if (!glfwInit()) {
-    //     spdlog::error("{}: can not init glfw!", __FUNCTION__);
-    //     return -1;
-    // }
-    // glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    // glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    // glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    // glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-    // glfwWindowHint(GLFW_RESIZABLE, GL_TRUE);
-    // glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_NATIVE_CONTEXT_API);
-    // --------------init opengl end -------
-
     SkImageInfo imageInfo = SkImageInfo::Make(
         DRAW_WIDTH, DRAW_HEIGHT,
         kBGRA_8888_SkColorType,
         kOpaque_SkAlphaType);
 
     // --------------- begin init x11 ------------
-    GrGLStandard forcedGpuAPI = kGL_GrGLStandard;
-    GLXContext fContext = nullptr;
-    Display* display = get_display();
-    if (!display) {
-        spdlog::error("{}: can not get x11 display!", __FUNCTION__);
-        return -1;
-    }
-
-    // Get a matching FB config
-    static int visual_attribs[] = {
-        GLX_X_RENDERABLE    , True,
-        GLX_DRAWABLE_TYPE   , GLX_PIXMAP_BIT,
-        None
-    };
-
-    int glx_major, glx_minor;
-    // FBConfigs were added in GLX version 1.3.
-    if (!glXQueryVersion(display, &glx_major, &glx_minor) ||
-            ((glx_major == 1) && (glx_minor < 3)) || (glx_major < 1)) {
-        spdlog::error("{}: glx version is lower than 1.3!", __FUNCTION__);
-        return 1;
-    }
-    spdlog::info("{}: glx version is {}.{}", __FUNCTION__, glx_major, glx_minor);
-
-    int fbcount;
-    GLXFBConfig *fbc = glXChooseFBConfig(display, DefaultScreen(display),
-                                          visual_attribs, &fbcount);
-    if (!fbc) {
-        spdlog::error("{}: Failed to retrieve a framebuffer config.", __FUNCTION__);
-        return 1;
-    }
-
-    int best_fbc = -1, best_num_samp = -1;
-
-    int i;
-    for (i = 0; i < fbcount; ++i) {
-        XVisualInfo *vi = glXGetVisualFromFBConfig(display, fbc[i]);
-        if (vi) {
-            int samp_buf, samples;
-            glXGetFBConfigAttrib(display, fbc[i], GLX_SAMPLE_BUFFERS, &samp_buf);
-            glXGetFBConfigAttrib(display, fbc[i], GLX_SAMPLES, &samples);
-
-            //SkDebugf("  Matching fbconfig %d, visual ID 0x%2x: SAMPLE_BUFFERS = %d,"
-            //       " SAMPLES = %d\n",
-            //        i, (unsigned int)vi->visualid, samp_buf, samples);
-            spdlog::trace("{}: Matching fbconfig {}, visual ID 0x{:x}: SAMPLE_BUFFERS = {}, SAMPLES = {}",
-                __FUNCTION__, i, (unsigned int)vi->visualid, samp_buf, samples);
-
-            if (best_fbc < 0 || (samp_buf && samples > best_num_samp)) {
-                best_fbc = i;
-                best_num_samp = samples;
-            }
-        }
-        XFree(vi);
-    }
-
-    GLXFBConfig bestFbc = fbc[best_fbc];
-
-    // Be sure to free the FBConfig list allocated by glXChooseFBConfig()
-    XFree(fbc);
-    // Get a visual
-    XVisualInfo *vi = glXGetVisualFromFBConfig(display, bestFbc);
-    //SkDebugf("Chosen visual ID = 0x%x\n", (unsigned int)vi->visualid);
-    spdlog::info("{}: Chosen visual ID = 0x{:x}", __FUNCTION__, (unsigned int)vi->visualid);
-
-    Pixmap pixmap = XCreatePixmap(display, RootWindow(display, vi->screen), 10, 10, vi->depth);
-    if (!pixmap) {
-        spdlog::error("{}: Failed to create pixmap.", __FUNCTION__);
-        return -1;
-    }
-    GLXPixmap glxPixmap = glXCreateGLXPixmap(display, vi, pixmap);
-    // Done with the visual info data
-    XFree(vi);
-
-    // Get the default screen's GLX extension list
-    const char *glxExts = glXQueryExtensionsString(
-        display, DefaultScreen(display)
-    );
-    // Check for the GLX_ARB_create_context extension string and the function.
-    // If either is not present, use GLX 1.3 context creation method.
-    if (!gluCheckExtension(reinterpret_cast<const GLubyte*>("GLX_ARB_create_context"),
-                           reinterpret_cast<const GLubyte*>(glxExts))) {
-        if (kGLES_GrGLStandard != forcedGpuAPI) {
-            fContext = glXCreateNewContext(display, bestFbc, GLX_RGBA_TYPE, nullptr, True);
-        }
-    } else {
-        if (kGLES_GrGLStandard == forcedGpuAPI) {
-            if (gluCheckExtension(
-                    reinterpret_cast<const GLubyte*>("GLX_EXT_create_context_es2_profile"),
-                    reinterpret_cast<const GLubyte*>(glxExts))) {
-                fContext = CreateBestContext(true, display, bestFbc, nullptr);
-            }
-        } else {
-            fContext = CreateBestContext(false, display, bestFbc, nullptr);
-        }
-    }
-    if (!fContext) {
-        spdlog::error("{}: Failed to create an OpenGL context.", __FUNCTION__);
-        return 1;
-    }
-
-    // Verify that context is a direct context
-    if (!glXIsDirect(display, fContext)) {
-        //SkDebugf("Indirect GLX rendering context obtained.\n");
-        spdlog::debug("{}: Indirect GLX rendering context obtained.", __FUNCTION__);
-    } else {
-        //SkDebugf("Direct GLX rendering context obtained.\n");
-        spdlog::debug("{}: Direct GLX rendering context obtained.", __FUNCTION__);
-    }
-
-
-    // Verify that context is a direct context
-    if (!glXIsDirect(display, fContext)) {
-        //SkDebugf("Indirect GLX rendering context obtained.\n");
-    } else {
-        //SkDebugf("Direct GLX rendering context obtained.\n");
-    }
-
-    if (!glXMakeCurrent(display, glxPixmap, fContext)) {
-        spdlog::error("{}: Could not set the context!", __FUNCTION__);
-        return 1;
-    }
+    GLXGLContext glxContext(kGL_GrGLStandard);
     // ----------------end init x11 ------------
+
+    // --------------- begin init ganesh ------------
     sk_sp<const GrGLInterface> glInterface = nullptr;
     sk_sp<GrDirectContext> grContext = GrDirectContexts::MakeGL(glInterface);
     if (!grContext) {
@@ -652,8 +603,11 @@ int main(int argc, char* argv[]) {
             spdlog::error("{}: gl interface is not valid!", __FUNCTION__);
             return -1;
         }
+        glxContext.init(glInterface);
     }
+    // ----------------end init ganesh ------------
 
+    // --------------- begin create sk surface ------------
     GrBackendTexture backendTexture = grContext->createBackendTexture(
         DRAW_WIDTH,
         DRAW_HEIGHT,
@@ -685,6 +639,7 @@ int main(int argc, char* argv[]) {
         spdlog::error("{}: can not create sk surface from backend texture!", __FUNCTION__);
         return -1;
     }
+    // ----------------end create sk surface ------------
 
     SkCanvas* canvas = skSurface->getCanvas();
 
@@ -696,13 +651,11 @@ int main(int argc, char* argv[]) {
     }
 
     canvas->drawColor(SK_ColorTRANSPARENT);
-    //--------------- begin draw ----------------
-    CuteLittleFibonacciSphereEffect effect;
+    //--------------- begin draw commands ----------------
+    FractalEffect effect;
     effect.initlize(DRAW_WIDTH, DRAW_HEIGHT);
-    effect.draw(canvas, 0.0f);
-    //--------------- end draw ------------------
-    // 将命令提交到 GPU 执行，确保所有绘制操作完成
-    grContext->flushAndSubmit(GrSyncCpu::kYes);
+    effect.draw(canvas, 8.104f);
+    //--------------- end draw commands ------------------
 
     if (SAVE_SKP) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();
@@ -712,6 +665,9 @@ int main(int argc, char* argv[]) {
         canvas = skSurface->getCanvas();
         canvas->drawPicture(picture);
     }
+
+    // 将命令提交到 GPU 执行，确保所有绘制操作完成
+    grContext->flushAndSubmit(GrSyncCpu::kYes);
 
     if(SAVE_BITMAP) {
         SkBitmap bitmap;
