@@ -21,6 +21,7 @@
 #include "Skia/include/core/SkImage.h"
 
 #include "Skia/include/core/SkTextBlob.h"
+#include "Skia/include/core/SkPathEffect.h"
 #include "Skia/include/core/SkRefCnt.h"
 
 
@@ -31,17 +32,15 @@
 #include "Skia/include/core/SkPaint.h"
 #include "Skia/include/core/SkPath.h"
 #include "Skia/include/core/SkFont.h"
-#include "Skia/include/core/SkClipOp.h"
 #include "Skia/include/core/SkRRect.h"
-#include "Skia/include/core/SkRegion.h"
+#include "Skia/include/core/SkMaskFilter.h"
+#include "Skia/include/core/SkDrawable.h"
 
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <GL/glu.h>
 
 #include <X11/X.h>
-#include <climits>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -49,6 +48,8 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkSamplingOptions.h"
 
 #include <iomanip>
 #include <chrono>
@@ -81,6 +82,7 @@ static const std::vector<std::string> pngResources = {"../resources/example_1.pn
     "../resources/example_4.png",
     "../resources/example_5.png",
     "../resources/example_6.png",
+    "../resources/example_6_100x100.png",
 };
 // RGBA raw file
 static const std::vector<std::string> rgbaRawResources = {
@@ -218,24 +220,97 @@ static void releaseProc(void* addr, void* ) {
     delete[] (uint32_t*) addr;
 }
 
-void draw0(SkCanvas* canvas) {
-    SkPaint paint, pointPaint;
-    pointPaint.setColor(SK_ColorRED);
-    paint.setAntiAlias(true);
-    SkIRect iRect = {30, 40, 120, 130 };
-    SkRegion region(iRect);
-    canvas->rotate(10);
-    canvas->translate(30, 30);
-    canvas->save();
-    // clipRegion 不受全局的 translate 和 rotate 的影响
-    canvas->clipRegion(region, SkClipOp::kIntersect);
-    canvas->drawCircle(50, 50, 45, paint);
-    canvas->drawPoint(50, 50, pointPaint);
-    canvas->restore();
-    canvas->translate(100, 100);
-    // clipRect 受到 translate 和 rotate 的影响
-    canvas->clipRect(SkRect::Make(iRect), SkClipOp::kIntersect);
-    canvas->drawCircle(50, 50, 45, paint);
+struct MyDrawable : public SkDrawable {
+    SkRect onGetBounds() override { return SkRect::MakeWH(50, 100);  }
+    void onDraw(SkCanvas* canvas) override {
+       SkPath path;
+       path.conicTo(10, 90, 50, 90, 0.9f);
+       SkPaint paint;
+       paint.setColor(SK_ColorBLUE);
+       canvas->drawRect(path.getBounds(), paint);
+       paint.setAntiAlias(true);
+       paint.setColor(SK_ColorWHITE);
+       canvas->drawPath(path, paint);
+    }
+};
+
+// https://fiddle.skia.org/c/@Canvas_drawImage
+void draw(SkCanvas* canvas) {
+    // sk_sp<SkImage> image;
+    SkImage* imagePtr = image.get();
+    canvas->drawImage(imagePtr, 0, 0);
+    SkPaint paint;
+    canvas->drawImage(imagePtr, 80, 0, SkSamplingOptions(), &paint);
+    paint.setAlpha(0x80);
+    canvas->drawImage(imagePtr, 160, 0, SkSamplingOptions(), &paint);
+}
+
+// https://fiddle.skia.org/c/@Canvas_drawImageNine
+void draw1(SkCanvas* canvas) {
+    SkIRect center = { 20, 10, 50, 40 };
+    SkBitmap bitmap;
+    bitmap.allocPixels(SkImageInfo::MakeN32Premul(60, 60));
+    SkCanvas bitCanvas(bitmap);
+    SkPaint paint;
+    SkColor gray = 0xFF000000;
+    int left = 0;
+    for (auto right: { center.fLeft, center.fRight, bitmap.width() } ) {
+        int top = 0;
+        for (auto bottom: { center.fTop, center.fBottom, bitmap.height() } ) {
+            paint.setColor(gray);
+            bitCanvas.drawIRect(SkIRect::MakeLTRB(left, top, right, bottom), paint);
+            gray += 0x001f1f1f;
+            top = bottom;
+        }
+        left = right;
+    }
+    sk_sp<SkImage> image = bitmap.asImage();
+    SkImage* imagePtr = image.get();
+    for (auto dest: { 20, 30, 40, 60, 90 } ) {
+        canvas->drawImageNine(imagePtr, center, SkRect::MakeWH(dest, dest),
+                              SkFilterMode::kNearest, nullptr);
+        canvas->translate(dest + 4, 0);
+    }
+}
+
+// https://fiddle.skia.org/c/@Canvas_drawImageNine_2
+void draw2(SkCanvas* canvas) {
+    SkIRect center = { 20, 10, 50, 40 };
+    SkBitmap bitmap;
+    bitmap.allocPixels(SkImageInfo::MakeN32Premul(60, 60));
+    SkCanvas bitCanvas(bitmap);
+    SkPaint paint;
+    SkColor gray = 0xFF000000;
+    int left = 0;
+    for (auto right: { center.fLeft, center.fRight, bitmap.width() } ) {
+        int top = 0;
+        for (auto bottom: { center.fTop, center.fBottom, bitmap.height() } ) {
+            paint.setColor(gray);
+            bitCanvas.drawIRect(SkIRect::MakeLTRB(left, top, right, bottom), paint);
+            gray += 0x001f1f1f;
+            top = bottom;
+        }
+        left = right;
+    }
+    sk_sp<SkImage> image = bitmap.asImage();
+    for (auto dest: { 20, 30, 40, 60, 90 } ) {
+        canvas->drawImageNine(image.get(), center, SkRect::MakeWH(dest, 110 - dest),
+                              SkFilterMode::kNearest, nullptr);
+        canvas->translate(dest + 4, 0);
+    }
+}
+
+void draw3(SkCanvas* canvas) {
+    sk_sp<SkImage> image = source.asImage();
+    SkIRect center = {20, 20, 60, 60};
+    SkRect dst = SkRect::MakeXYWH(0, 0, 100, 100);
+    canvas->drawImageNine(image.get(), center, dst, SkFilterMode::kNearest, nullptr);
+}
+
+void draw4(SkCanvas* canvas) {
+    sk_sp<SkImage> image = source.asImage();
+    SkRect rect = SkRect::MakeWH(100, 100);
+    canvas->drawImageRect(image.get(), rect, SkFilterMode::kNearest, nullptr);
 }
 
 int main(int argc, char* argv[]) {
@@ -256,7 +331,7 @@ int main(int argc, char* argv[]) {
         ->check(CLI::IsMember({0, 1}))
         ->default_val(0);
     app.add_option("-R,--resource", RESOURCE_ID, "resource id for program loading image")
-        ->check(CLI::Range(0, 5))
+        ->check(CLI::Range(0, 6))
         ->default_val(2);
     app.add_option("-P,--picture", SAVE_SKP, "Save Canvas draw to skp file")
         ->check(CLI::IsMember({0, 1}))
@@ -309,7 +384,7 @@ int main(int argc, char* argv[]) {
     canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
 
-   DRAW_NO(0)(canvas);
+   draw3(canvas);
 
     if (SAVE_SKP) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();

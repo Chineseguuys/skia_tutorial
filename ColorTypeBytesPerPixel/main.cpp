@@ -28,19 +28,19 @@
 // added and open the SK_DEBUG for SkRefCnt.h:166: fatal error: "assertf(rc == 1): NVRefCnt was 0"
 #include "Skia/include/config/SkUserConfig.h"
 #include "Skia/include/core/SkColorSpace.h"
-#include "Skia/include/core/SkPaint.h"
 #include "Skia/include/core/SkPath.h"
-#include "Skia/include/core/SkFont.h"
-#include "Skia/include/core/SkClipOp.h"
 #include "Skia/include/core/SkRRect.h"
-#include "Skia/include/core/SkRegion.h"
+#include "Skia/include/core/SkDrawable.h"
+#include "Skia/include/core/SkShader.h"
+#include "Skia/include/core/SkRect.h"
+#include "Skia/include/effects/SkImageFilters.h"
+#include "Skia/include/core/SkMatrix.h"
 
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <GL/glu.h>
 
 #include <X11/X.h>
-#include <climits>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -49,6 +49,13 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
+#include "include/core/SkBlendMode.h"
+#include "include/core/SkFont.h"
+#include "include/core/SkImageFilter.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPixmap.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkScalar.h"
 
 #include <iomanip>
 #include <chrono>
@@ -64,15 +71,13 @@
 
 #include "backward.hpp"
 
-#define DRAW_NO(_number) draw##_number
-
 static sk_sp<SkFontMgr> fontMgr;
 static sk_sp<SkTypeface> typeFace;
 static SkBitmap source;
 static sk_sp<SkImage> image;
 static int DRAW_WIDTH = 256;
 static int DRAW_HEIGHT = 256;
-static int RESOURCE_ID = 2;
+static int RESOURCE_ID = 3;
 static bool SAVE_BITMAP = false;
 static bool SAVE_SKP = false;
 static const std::vector<std::string> pngResources = {"../resources/example_1.png",
@@ -218,24 +223,65 @@ static void releaseProc(void* addr, void* ) {
     delete[] (uint32_t*) addr;
 }
 
-void draw0(SkCanvas* canvas) {
-    SkPaint paint, pointPaint;
-    pointPaint.setColor(SK_ColorRED);
-    paint.setAntiAlias(true);
-    SkIRect iRect = {30, 40, 120, 130 };
-    SkRegion region(iRect);
-    canvas->rotate(10);
-    canvas->translate(30, 30);
-    canvas->save();
-    // clipRegion 不受全局的 translate 和 rotate 的影响
-    canvas->clipRegion(region, SkClipOp::kIntersect);
-    canvas->drawCircle(50, 50, 45, paint);
-    canvas->drawPoint(50, 50, pointPaint);
-    canvas->restore();
-    canvas->translate(100, 100);
-    // clipRect 受到 translate 和 rotate 的影响
-    canvas->clipRect(SkRect::Make(iRect), SkClipOp::kIntersect);
-    canvas->drawCircle(50, 50, 45, paint);
+/**
+ * 打印 SkMatrix 矩阵的详细信息
+ * 
+ * @param matrix 要打印的 SkMatrix 对象
+ * @param name   矩阵名称（可选），用于标识输出
+ * @param precision 浮点数打印精度（小数位数）
+ */
+void printSkMatrix(const SkMatrix& matrix, const char* name = "SkMatrix", int precision = 2) {
+    // 设置浮点数格式
+    char format[16];
+    snprintf(format, sizeof(format), "%%.%df", precision);
+
+    // 打印标题
+    if (name && *name) {
+        printf("\n%s:\n", name);
+    } else {
+        printf("\nSkMatrix:\n");
+    }
+
+    // 获取矩阵元素（使用行主序表示）
+    SkScalar buffer[9];
+    matrix.get9(buffer);
+
+    // 打印矩阵内容
+    printf("┌ "); printf(format, buffer[0]); printf("    "); 
+              printf(format, buffer[1]); printf("    "); 
+              printf(format, buffer[2]); printf(" ┐\n");
+
+    printf("│ "); printf(format, buffer[3]); printf("    "); 
+              printf(format, buffer[4]); printf("    "); 
+              printf(format, buffer[5]); printf(" │\n");
+
+    printf("└ "); printf(format, buffer[6]); printf("    "); 
+              printf(format, buffer[7]); printf("    "); 
+              printf(format, buffer[8]); printf(" ┘\n");
+
+    return;
+}
+
+// https://fiddle.skia.org/c/@ColorTypeBytesPerPixel
+void draw(SkCanvas* canvas) {
+    const char* colors[] = { "Unknown", "Alpha_8", "RGB_565", "ARGB_4444", "RGBA_8888", "RGB_888x",
+                             "BGRA_8888", "RGBA_1010102", "RGB_101010x", "Gray_8", "RGBA_F16Norm",
+                             "RGBA_F16" };
+    SkPaint paint;
+    SkFont font(typeFace, 10);
+    int y = 15;
+    canvas->drawString("    colorType  bytes", 10, y, font, paint);
+    for (SkColorType colorType : {
+    kUnknown_SkColorType, kAlpha_8_SkColorType, kRGB_565_SkColorType,
+    kARGB_4444_SkColorType, kRGBA_8888_SkColorType, kRGB_888x_SkColorType,
+    kBGRA_8888_SkColorType, kRGBA_1010102_SkColorType, kRGB_101010x_SkColorType,
+    kGray_8_SkColorType, kRGBA_F16_SkColorType
+                                 } ) {
+        int result = SkColorTypeBytesPerPixel(colorType);
+        SkString string;
+        string.printf("%13s %4d", colors[(int) colorType], result);
+        canvas->drawString(string, 10, y += 14, font, paint);
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -309,7 +355,7 @@ int main(int argc, char* argv[]) {
     canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
 
-   DRAW_NO(0)(canvas);
+   draw(canvas);
 
     if (SAVE_SKP) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();

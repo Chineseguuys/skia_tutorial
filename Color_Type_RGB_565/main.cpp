@@ -28,19 +28,19 @@
 // added and open the SK_DEBUG for SkRefCnt.h:166: fatal error: "assertf(rc == 1): NVRefCnt was 0"
 #include "Skia/include/config/SkUserConfig.h"
 #include "Skia/include/core/SkColorSpace.h"
-#include "Skia/include/core/SkPaint.h"
 #include "Skia/include/core/SkPath.h"
-#include "Skia/include/core/SkFont.h"
-#include "Skia/include/core/SkClipOp.h"
 #include "Skia/include/core/SkRRect.h"
-#include "Skia/include/core/SkRegion.h"
+#include "Skia/include/core/SkDrawable.h"
+#include "Skia/include/core/SkShader.h"
+#include "Skia/include/core/SkRect.h"
+#include "Skia/include/effects/SkImageFilters.h"
+#include "Skia/include/core/SkMatrix.h"
 
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <GL/glu.h>
 
 #include <X11/X.h>
-#include <climits>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -49,6 +49,10 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
+#include "include/core/SkBlendMode.h"
+#include "include/core/SkFont.h"
+#include "include/core/SkImageFilter.h"
+#include "include/core/SkPixmap.h"
 
 #include <iomanip>
 #include <chrono>
@@ -64,15 +68,13 @@
 
 #include "backward.hpp"
 
-#define DRAW_NO(_number) draw##_number
-
 static sk_sp<SkFontMgr> fontMgr;
 static sk_sp<SkTypeface> typeFace;
 static SkBitmap source;
 static sk_sp<SkImage> image;
 static int DRAW_WIDTH = 256;
 static int DRAW_HEIGHT = 256;
-static int RESOURCE_ID = 2;
+static int RESOURCE_ID = 3;
 static bool SAVE_BITMAP = false;
 static bool SAVE_SKP = false;
 static const std::vector<std::string> pngResources = {"../resources/example_1.png",
@@ -218,24 +220,71 @@ static void releaseProc(void* addr, void* ) {
     delete[] (uint32_t*) addr;
 }
 
-void draw0(SkCanvas* canvas) {
-    SkPaint paint, pointPaint;
-    pointPaint.setColor(SK_ColorRED);
-    paint.setAntiAlias(true);
-    SkIRect iRect = {30, 40, 120, 130 };
-    SkRegion region(iRect);
-    canvas->rotate(10);
-    canvas->translate(30, 30);
-    canvas->save();
-    // clipRegion 不受全局的 translate 和 rotate 的影响
-    canvas->clipRegion(region, SkClipOp::kIntersect);
-    canvas->drawCircle(50, 50, 45, paint);
-    canvas->drawPoint(50, 50, pointPaint);
-    canvas->restore();
-    canvas->translate(100, 100);
-    // clipRect 受到 translate 和 rotate 的影响
-    canvas->clipRect(SkRect::Make(iRect), SkClipOp::kIntersect);
-    canvas->drawCircle(50, 50, 45, paint);
+/**
+ * 打印 SkMatrix 矩阵的详细信息
+ * 
+ * @param matrix 要打印的 SkMatrix 对象
+ * @param name   矩阵名称（可选），用于标识输出
+ * @param precision 浮点数打印精度（小数位数）
+ */
+void printSkMatrix(const SkMatrix& matrix, const char* name = "SkMatrix", int precision = 2) {
+    // 设置浮点数格式
+    char format[16];
+    snprintf(format, sizeof(format), "%%.%df", precision);
+
+    // 打印标题
+    if (name && *name) {
+        printf("\n%s:\n", name);
+    } else {
+        printf("\nSkMatrix:\n");
+    }
+
+    // 获取矩阵元素（使用行主序表示）
+    SkScalar buffer[9];
+    matrix.get9(buffer);
+
+    // 打印矩阵内容
+    printf("┌ "); printf(format, buffer[0]); printf("    "); 
+              printf(format, buffer[1]); printf("    "); 
+              printf(format, buffer[2]); printf(" ┐\n");
+
+    printf("│ "); printf(format, buffer[3]); printf("    "); 
+              printf(format, buffer[4]); printf("    "); 
+              printf(format, buffer[5]); printf(" │\n");
+
+    printf("└ "); printf(format, buffer[6]); printf("    "); 
+              printf(format, buffer[7]); printf("    "); 
+              printf(format, buffer[8]); printf(" ┘\n");
+
+    return;
+}
+
+// https://fiddle.skia.org/c/@Color_Type_RGB_565
+void draw(SkCanvas* canvas) {
+    canvas->scale(16, 16);
+    SkBitmap bitmap;
+    SkImageInfo imageInfo = SkImageInfo::Make(2,2,kRGB_565_SkColorType, kOpaque_SkAlphaType);
+    bitmap.allocPixels(imageInfo);
+    SkCanvas offscreen(bitmap);
+    offscreen.clear(SK_ColorGREEN);
+    canvas->drawImage(bitmap.asImage(), 0,0);
+
+    auto pack565 = [](unsigned r, unsigned g, unsigned b) -> uint16_t {
+        return (b << 0) | (g << 5) | (r << 11);
+    };
+
+    uint16_t red565[] =  { pack565(0x1F, 0x00, 0x00), pack565(0x17, 0x00, 0x00),
+                           pack565(0x0F, 0x00, 0x00), pack565(0x07, 0x00, 0x00) };
+    uint16_t blue565[] = { pack565(0x00, 0x00, 0x1F), pack565(0x00, 0x00, 0x17),
+                           pack565(0x00, 0x00, 0x0F), pack565(0x00, 0x00, 0x07) };
+    SkPixmap redPixmap(imageInfo, &red565, imageInfo.minRowBytes());
+    if (bitmap.writePixels(redPixmap, 0, 0)) {
+        canvas->drawImage(bitmap.asImage(), 2, 2);
+    }
+    SkPixmap bluePixmap(imageInfo, &blue565, imageInfo.minRowBytes());
+    if (bitmap.writePixels(bluePixmap, 0, 0)) {
+        canvas->drawImage(bitmap.asImage(), 4, 4);
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -309,7 +358,7 @@ int main(int argc, char* argv[]) {
     canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
 
-   DRAW_NO(0)(canvas);
+   draw(canvas);
 
     if (SAVE_SKP) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();

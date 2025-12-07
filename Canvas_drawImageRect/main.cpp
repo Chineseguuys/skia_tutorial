@@ -21,6 +21,7 @@
 #include "Skia/include/core/SkImage.h"
 
 #include "Skia/include/core/SkTextBlob.h"
+#include "Skia/include/core/SkPathEffect.h"
 #include "Skia/include/core/SkRefCnt.h"
 
 
@@ -31,17 +32,15 @@
 #include "Skia/include/core/SkPaint.h"
 #include "Skia/include/core/SkPath.h"
 #include "Skia/include/core/SkFont.h"
-#include "Skia/include/core/SkClipOp.h"
 #include "Skia/include/core/SkRRect.h"
-#include "Skia/include/core/SkRegion.h"
+#include "Skia/include/core/SkDrawable.h"
+#include "Skia/include/core/SkColorFilter.h"
 
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <GL/glu.h>
 
 #include <X11/X.h>
-#include <climits>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -49,6 +48,8 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkSamplingOptions.h"
 
 #include <iomanip>
 #include <chrono>
@@ -81,6 +82,7 @@ static const std::vector<std::string> pngResources = {"../resources/example_1.pn
     "../resources/example_4.png",
     "../resources/example_5.png",
     "../resources/example_6.png",
+    "../resources/example_6_100x100.png",
 };
 // RGBA raw file
 static const std::vector<std::string> rgbaRawResources = {
@@ -213,29 +215,107 @@ bool loadRGBARawFile(const char* fileName, int width, int height, uint32_t** raw
     return true;
 }
 
-static void releaseProc(void* addr, void* ) {
-    spdlog::info("releaseProc called\n");
-    delete[] (uint32_t*) addr;
+// https://fiddle.skia.org/c/@Canvas_drawImageRect
+void draw(SkCanvas* canvas) {
+    uint32_t pixels[][4] = {
+            // 周围的一圈的像素是红色的，中间的四个像素则是黑白相间的
+            { 0xFFFF0000, 0xFFFF0000, 0xFFFF0000, 0xFFFF0000 },
+            { 0xFFFF0000, 0xFF000000, 0xFFFFFFFF, 0xFFFF0000 },
+            { 0xFFFF0000, 0xFFFFFFFF, 0xFF000000, 0xFFFF0000 },
+            { 0xFFFF0000, 0xFFFF0000, 0xFFFF0000, 0xFFFF0000 } };
+
+    SkBitmap redBorder;
+    redBorder.installPixels(SkImageInfo::MakeN32Premul(4, 4),
+        (void*)pixels,
+        sizeof(pixels[0]));
+    sk_sp<SkImage> image = redBorder.asImage();
+    // 默认是 Nearest
+    SkSamplingOptions sampling;
+    for (auto constraint : {
+        SkCanvas::kFast_SrcRectConstraint,
+        SkCanvas::kStrict_SrcRectConstraint,
+        SkCanvas::kFast_SrcRectConstraint}) {
+        // 当使用 drawImageRect() 绘制图像的子区域时，如果启用了滤波处理（如双线性插值、mipmap、各向异性滤波），采样器可能会超出源矩形边界读取像素
+        // 我们希望采样的区域是中间的四个像素，不包含边缘的红色的像素
+        canvas->drawImageRect(image.get(), SkRect::MakeLTRB(1, 1, 3, 3),
+            SkRect::MakeLTRB(16, 16, 48, 48), sampling, nullptr, constraint);
+            // 如果使用了 KLinear的话，那么对原图进行采样的时候，就有可能采样到采样区域外面的点(使用 kStrict可以避免采样到指定区域外面的点)
+        sampling = SkSamplingOptions(SkFilterMode::kLinear);
+        canvas->translate(80, 0);
+    }
 }
 
-void draw0(SkCanvas* canvas) {
-    SkPaint paint, pointPaint;
-    pointPaint.setColor(SK_ColorRED);
-    paint.setAntiAlias(true);
-    SkIRect iRect = {30, 40, 120, 130 };
-    SkRegion region(iRect);
-    canvas->rotate(10);
-    canvas->translate(30, 30);
-    canvas->save();
-    // clipRegion 不受全局的 translate 和 rotate 的影响
-    canvas->clipRegion(region, SkClipOp::kIntersect);
-    canvas->drawCircle(50, 50, 45, paint);
-    canvas->drawPoint(50, 50, pointPaint);
-    canvas->restore();
-    canvas->translate(100, 100);
-    // clipRect 受到 translate 和 rotate 的影响
-    canvas->clipRect(SkRect::Make(iRect), SkClipOp::kIntersect);
-    canvas->drawCircle(50, 50, 45, paint);
+// https://fiddle.skia.org/c/@Canvas_drawImageRect_2
+void draw1(SkCanvas* canvas) {
+    for (auto i : {1, 2, 4, 8}) {
+        canvas->drawImageRect(image.get(), SkRect::MakeLTRB(0, 0, 100, 100),
+            SkRect::MakeXYWH(i*20, i*20, i*20, i*20), SkSamplingOptions(), nullptr, 
+            SkCanvas::kStrict_SrcRectConstraint);
+    }
+}
+
+// https://fiddle.skia.org/c/@Canvas_drawImageRect_3
+void draw2(SkCanvas* canvas) {
+    for (auto i : {20, 40, 80, 160}) {
+        canvas->drawImageRect(image.get(), SkRect::MakeXYWH(i, i, i, i), SkSamplingOptions());
+    }
+}
+
+// https://fiddle.skia.org/c/@Canvas_drawImageRect_4
+void draw3(SkCanvas* canvas) {
+    uint32_t pixels[][2] = { { SK_ColorBLACK, SK_ColorWHITE },
+                             { SK_ColorWHITE, SK_ColorBLACK } };
+
+    SkBitmap bitmap;
+    bitmap.installPixels(SkImageInfo::MakeN32Premul(2, 2), 
+        (void*) pixels, sizeof(pixels[0]));
+    sk_sp<SkImage> image = bitmap.asImage();
+    SkPaint paint;
+    canvas->scale(4, 4);
+    for (auto alpha : {50, 100,150,255}) {
+        paint.setAlpha(alpha);
+        canvas->drawImageRect(image, SkRect::MakeWH(2,2), SkRect::MakeWH(8, 8),
+        SkSamplingOptions(), &paint, SkCanvas::kStrict_SrcRectConstraint);
+        canvas->translate(8, 0);
+    }
+}
+
+// https://fiddle.skia.org/c/@Canvas_drawImageRect_5
+void draw4(SkCanvas* canvas) {
+    uint32_t pixels[][2] = { { 0x00000000, 0x55555555},
+                             { 0xAAAAAAAA, 0xFFFFFFFF} };
+
+    SkBitmap bitmap;
+    bitmap.installPixels(SkImageInfo::MakeN32Premul(2, 2),
+        (void*) pixels, sizeof(pixels[0]));
+    sk_sp<SkImage> image = bitmap.asImage();
+    SkPaint paint;
+    canvas->scale(4, 4);
+    for (auto color : { SK_ColorRED, SK_ColorBLUE, SK_ColorGREEN } ) {
+        paint.setColorFilter(SkColorFilters::Blend(color, SkBlendMode::kPlus));
+        canvas->drawImageRect(image, SkRect::MakeWH(2, 2), SkRect::MakeWH(8, 8),
+                              SkSamplingOptions(), &paint, SkCanvas::kStrict_SrcRectConstraint);
+        canvas->translate(8, 0);
+    }
+}
+
+// https://fiddle.skia.org/c/@Canvas_drawImageRect_6
+void draw5(SkCanvas* canvas) {
+    uint32_t pixels[][2] = { { 0x00000000, 0x55550000},
+                             { 0xAAAA0000, 0xFFFF0000} };
+    SkBitmap bitmap;
+    bitmap.installPixels(SkImageInfo::MakeN32Premul(2, 2),
+            (void*) pixels, sizeof(pixels[0]));
+    sk_sp<SkImage> image = bitmap.asImage();
+    SkPaint paint;
+    canvas->scale(4, 4);
+    canvas->drawImageRect(image, SkRect::MakeWH(8, 8), SkSamplingOptions(), &paint);
+    canvas->translate(8, 0);
+    for (auto color : { SK_ColorRED, SK_ColorBLUE, SK_ColorGREEN } ) {
+        paint.setColorFilter(SkColorFilters::Blend(color, SkBlendMode::kPlus));
+        canvas->drawImageRect(image, SkRect::MakeWH(8, 8), SkSamplingOptions(), &paint);
+        canvas->translate(8, 0);
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -256,7 +336,7 @@ int main(int argc, char* argv[]) {
         ->check(CLI::IsMember({0, 1}))
         ->default_val(0);
     app.add_option("-R,--resource", RESOURCE_ID, "resource id for program loading image")
-        ->check(CLI::Range(0, 5))
+        ->check(CLI::Range(0, 6))
         ->default_val(2);
     app.add_option("-P,--picture", SAVE_SKP, "Save Canvas draw to skp file")
         ->check(CLI::IsMember({0, 1}))
@@ -309,7 +389,7 @@ int main(int argc, char* argv[]) {
     canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
 
-   DRAW_NO(0)(canvas);
+   draw5(canvas);
 
     if (SAVE_SKP) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();

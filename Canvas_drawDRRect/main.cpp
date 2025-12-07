@@ -21,6 +21,7 @@
 #include "Skia/include/core/SkImage.h"
 
 #include "Skia/include/core/SkTextBlob.h"
+#include "Skia/include/core/SkPathEffect.h"
 #include "Skia/include/core/SkRefCnt.h"
 
 
@@ -31,17 +32,15 @@
 #include "Skia/include/core/SkPaint.h"
 #include "Skia/include/core/SkPath.h"
 #include "Skia/include/core/SkFont.h"
-#include "Skia/include/core/SkClipOp.h"
 #include "Skia/include/core/SkRRect.h"
-#include "Skia/include/core/SkRegion.h"
+#include "Skia/include/core/SkMaskFilter.h"
+#include "Skia/include/core/SkDrawable.h"
 
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <GL/glu.h>
 
 #include <X11/X.h>
-#include <climits>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -218,24 +217,43 @@ static void releaseProc(void* addr, void* ) {
     delete[] (uint32_t*) addr;
 }
 
+struct MyDrawable : public SkDrawable {
+    SkRect onGetBounds() override { return SkRect::MakeWH(50, 100);  }
+    void onDraw(SkCanvas* canvas) override {
+       SkPath path;
+       path.conicTo(10, 90, 50, 90, 0.9f);
+       SkPaint paint;
+       paint.setColor(SK_ColorBLUE);
+       canvas->drawRect(path.getBounds(), paint);
+       paint.setAntiAlias(true);
+       paint.setColor(SK_ColorWHITE);
+       canvas->drawPath(path, paint);
+    }
+};
+
+// https://fiddle.skia.org/c/@Canvas_drawDRRect_a
 void draw0(SkCanvas* canvas) {
-    SkPaint paint, pointPaint;
-    pointPaint.setColor(SK_ColorRED);
+    SkRRect outer = SkRRect::MakeRect({20, 40, 210, 200});
+    SkRRect inner = SkRRect::MakeOval({60, 70, 170, 160});
+    SkPaint paint;
+    canvas->drawDRRect(outer, inner, paint);
+}
+
+// https://fiddle.skia.org/c/@Canvas_drawDRRect_b
+void draw1(SkCanvas* canvas) {
+    // 矩形
+    SkRRect outer = SkRRect::MakeRect({20, 40, 210, 200});
+    // 圆角矩形
+    SkRRect inner = SkRRect::MakeRectXY({60, 70, 170, 160}, 10, 10);
+    SkPaint paint;
     paint.setAntiAlias(true);
-    SkIRect iRect = {30, 40, 120, 130 };
-    SkRegion region(iRect);
-    canvas->rotate(10);
-    canvas->translate(30, 30);
-    canvas->save();
-    // clipRegion 不受全局的 translate 和 rotate 的影响
-    canvas->clipRegion(region, SkClipOp::kIntersect);
-    canvas->drawCircle(50, 50, 45, paint);
-    canvas->drawPoint(50, 50, pointPaint);
-    canvas->restore();
-    canvas->translate(100, 100);
-    // clipRect 受到 translate 和 rotate 的影响
-    canvas->clipRect(SkRect::Make(iRect), SkClipOp::kIntersect);
-    canvas->drawCircle(50, 50, 45, paint);
+    paint.setStyle(SkPaint::kStroke_Style);
+    paint.setStrokeWidth(20);
+    paint.setStrokeJoin(SkPaint::kRound_Join);
+    canvas->drawDRRect(outer, inner, paint);
+    paint.setStrokeWidth(5);
+    paint.setColor(SK_ColorWHITE);
+    canvas->drawDRRect(outer, inner, paint);
 }
 
 int main(int argc, char* argv[]) {
@@ -309,7 +327,7 @@ int main(int argc, char* argv[]) {
     canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
 
-   DRAW_NO(0)(canvas);
+   DRAW_NO(1)(canvas);
 
     if (SAVE_SKP) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();

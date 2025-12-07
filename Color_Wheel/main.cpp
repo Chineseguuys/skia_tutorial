@@ -28,20 +28,23 @@
 // added and open the SK_DEBUG for SkRefCnt.h:166: fatal error: "assertf(rc == 1): NVRefCnt was 0"
 #include "Skia/include/config/SkUserConfig.h"
 #include "Skia/include/core/SkColorSpace.h"
-#include "Skia/include/core/SkPaint.h"
 #include "Skia/include/core/SkPath.h"
-#include "Skia/include/core/SkFont.h"
-#include "Skia/include/core/SkClipOp.h"
 #include "Skia/include/core/SkRRect.h"
-#include "Skia/include/core/SkRegion.h"
+#include "Skia/include/core/SkDrawable.h"
+#include "Skia/include/core/SkShader.h"
+#include "Skia/include/core/SkRect.h"
+#include "Skia/include/effects/SkImageFilters.h"
+#include "Skia/include/core/SkMatrix.h"
+#include "Skia/include/effects/SkGradientShader.h"
+#include "Skia/include/core/SkFont.h"
+#include "Skia/include/core/SkImageFilter.h"
+#include "Skia/include/core/SkPaint.h"
 
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <GL/glu.h>
 
 #include <X11/X.h>
-#include <climits>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -49,6 +52,7 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
+#include "include/core/SkFontStyle.h"
 
 #include <iomanip>
 #include <chrono>
@@ -64,15 +68,13 @@
 
 #include "backward.hpp"
 
-#define DRAW_NO(_number) draw##_number
-
 static sk_sp<SkFontMgr> fontMgr;
 static sk_sp<SkTypeface> typeFace;
 static SkBitmap source;
 static sk_sp<SkImage> image;
 static int DRAW_WIDTH = 256;
 static int DRAW_HEIGHT = 256;
-static int RESOURCE_ID = 2;
+static int RESOURCE_ID = 3;
 static bool SAVE_BITMAP = false;
 static bool SAVE_SKP = false;
 static const std::vector<std::string> pngResources = {"../resources/example_1.png",
@@ -218,24 +220,91 @@ static void releaseProc(void* addr, void* ) {
     delete[] (uint32_t*) addr;
 }
 
-void draw0(SkCanvas* canvas) {
-    SkPaint paint, pointPaint;
-    pointPaint.setColor(SK_ColorRED);
-    paint.setAntiAlias(true);
-    SkIRect iRect = {30, 40, 120, 130 };
-    SkRegion region(iRect);
-    canvas->rotate(10);
-    canvas->translate(30, 30);
-    canvas->save();
-    // clipRegion 不受全局的 translate 和 rotate 的影响
-    canvas->clipRegion(region, SkClipOp::kIntersect);
-    canvas->drawCircle(50, 50, 45, paint);
-    canvas->drawPoint(50, 50, pointPaint);
-    canvas->restore();
-    canvas->translate(100, 100);
-    // clipRect 受到 translate 和 rotate 的影响
-    canvas->clipRect(SkRect::Make(iRect), SkClipOp::kIntersect);
-    canvas->drawCircle(50, 50, 45, paint);
+/**
+ * 打印 SkMatrix 矩阵的详细信息
+ * 
+ * @param matrix 要打印的 SkMatrix 对象
+ * @param name   矩阵名称（可选），用于标识输出
+ * @param precision 浮点数打印精度（小数位数）
+ */
+void printSkMatrix(const SkMatrix& matrix, const char* name = "SkMatrix", int precision = 2) {
+    // 设置浮点数格式
+    char format[16];
+    snprintf(format, sizeof(format), "%%.%df", precision);
+
+    // 打印标题
+    if (name && *name) {
+        printf("\n%s:\n", name);
+    } else {
+        printf("\nSkMatrix:\n");
+    }
+
+    // 获取矩阵元素（使用行主序表示）
+    SkScalar buffer[9];
+    matrix.get9(buffer);
+
+    // 打印矩阵内容
+    printf("┌ "); printf(format, buffer[0]); printf("    "); 
+              printf(format, buffer[1]); printf("    "); 
+              printf(format, buffer[2]); printf(" ┐\n");
+
+    printf("│ "); printf(format, buffer[3]); printf("    "); 
+              printf(format, buffer[4]); printf("    "); 
+              printf(format, buffer[5]); printf(" │\n");
+
+    printf("└ "); printf(format, buffer[6]); printf("    "); 
+              printf(format, buffer[7]); printf("    "); 
+              printf(format, buffer[8]); printf(" ┘\n");
+
+    return;
+}
+
+void draw_color_wheel(SkCanvas* canvas, float scale) {
+    const float stroke = scale*3/64;
+    const float size = scale*9/32;
+    SkAutoCanvasRestore autoCanvasRestore(canvas, true);
+    canvas->translate(0.5f*scale, 0.5f*scale);
+    canvas->clear(0);
+    canvas->drawCircle({0,0},(scale - stroke)*0.5f, SkPaint(SkColors::kWhite));
+    {
+        SkPaint sweep;
+        const SkMatrix rotate = SkMatrix::MakeAll(0, -1, 0, 1, 0, 0, 0, 0, 1);
+        constexpr unsigned kColorCount = 7;
+        static const SkColor4f kColors[kColorCount]={
+            SkColors::kRed,SkColors::kYellow,SkColors::kGreen,
+            SkColors::kCyan,SkColors::kBlue,SkColors::kMagenta,
+            SkColors::kRed
+        };
+        sweep.setShader(SkGradientShader::MakeSweep(0,0,kColors,nullptr,nullptr,kColorCount,0,&rotate));
+        sweep.setStyle(SkPaint::kStroke_Style);
+        sweep.setStrokeWidth(stroke);
+        sweep.setAntiAlias(true);
+        canvas->drawCircle({0,0},(scale-stroke)*0.5f, sweep);
+    }
+
+    SkFont font(fontMgr->legacyMakeTypeface(nullptr, SkFontStyle::Bold()),size);
+    const struct { const char* str; float radius; float angle; SkColor4f color;} kLetters[] = {
+        {"K", 0,   0, SkColors::kBlack},
+        {"R", 1,  90, SkColors::kRed},
+        {"Y", 1, 150, SkColors::kYellow},
+        {"G", 1, 210, SkColors::kGreen},
+        {"C", 1, 270, SkColors::kCyan},
+        {"B", 1, 330, SkColors::kBlue},
+        {"M", 1,  30, SkColors::kMagenta},
+    };
+    for (const auto& v : kLetters) {
+        SkRect bnds;
+        font.measureText(v.str, strlen(v.str), SkTextEncoding::kUTF8, &bnds);
+        constexpr double pi_over_180 = 3.141592653589793 / 180;
+        float x = (float)(0.3 * scale * v.radius * cos(pi_over_180 * v.angle) - bnds.centerX());
+        float y = (float)(0.3 * scale * v.radius * sin(pi_over_180 * v.angle) - bnds.centerY());
+        canvas->drawString(v.str, x, y, font, SkPaint(v.color));
+    }
+}
+
+// https://fiddle.skia.org/c/@Color_Wheel
+void draw(SkCanvas* canvas) {
+    draw_color_wheel(canvas, 256);
 }
 
 int main(int argc, char* argv[]) {
@@ -309,7 +378,7 @@ int main(int argc, char* argv[]) {
     canvas->drawColor(SK_ColorTRANSPARENT);
 #endif
 
-   DRAW_NO(0)(canvas);
+   draw(canvas);
 
     if (SAVE_SKP) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();
