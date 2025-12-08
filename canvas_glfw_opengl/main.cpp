@@ -54,6 +54,8 @@
 // #include "src/gpu/ganesh/gl/GrGLDefines.h"
 #endif  // end SK_GL
 
+#include "skia/include/effects/SkRuntimeEffect.h"
+
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <GL/glu.h>
@@ -268,6 +270,91 @@ void initGrContextOptions(GrContextOptions& options) {
     options.fReduceOpsTaskSplitting = GrContextOptions::Enable::kNo;
 }
 
+class FractalEffect {
+public:
+    static constexpr const char* skShaderCode = R"(
+        uniform float2 iResolution;      // Viewport resolution (pixels)
+        uniform float  iTime;            // Shader playback time (s)
+
+        float julia(vec2 uv, vec2 c) {
+            const float maxSteps = 400;
+            for (float i = 0; i < maxSteps; i++) {
+                uv = vec2(uv.x * uv.x - uv.y * uv.y + c.x,
+                        2.0 * uv.x * uv.y + c.y);
+                if (length(uv) > 2) {
+                    return i / maxSteps;
+                }
+            }
+            return 1.0;
+        }
+
+
+        vec4 main( in vec2 fragCoord )
+        {
+            // Normalized pixel coordinates (from 0 to 1)
+            vec2 uv = -1.0 + 2.0 * fragCoord / iResolution.xy;
+
+            float aspect = iResolution.x / iResolution.y;
+            uv.x *= aspect;
+
+            uv *= pow(0.5, -1.0 + 15.0 * (0.5 + 0.5 * sin(iTime * 0.80 - (3.14159265))));
+            uv += vec2(-0.51, -0.61351); // an interesting coordinate to zoom in on 
+            float f = julia(vec2(0.0, 0.0), uv);
+            
+            // Output to screen
+            return vec4((1.0 - uv) * pow(f, 0.5), f, 1.0);
+        }
+    )";
+
+    struct Uniform {
+        std::string sName;
+        std::vector<uint8_t> sData;
+    };
+
+    void initlize(int width, int height) {
+        mCanvasWidth = width;
+        mCanvasHeight = height;
+    }
+
+    void draw(SkCanvas* canvas, float time) {
+        // Implementation similar to PlusingCircleEffect
+        SkRuntimeEffect::Result result = SkRuntimeEffect::MakeForShader(SkString(skShaderCode));
+        if (!result.effect) {
+            spdlog::error("{}: can not create runtime effect!", __FUNCTION__);
+            return;
+        }
+
+        Uniform uniform;
+        uniform.sName = "iTime";
+        uniform.sData.resize(sizeof(float));
+        std::memcpy(uniform.sData.data(), &time, sizeof(float));
+
+        SkPoint resolution = SkPoint::Make((float)mCanvasWidth, (float)mCanvasHeight);
+        Uniform resolutionUniform;
+        resolutionUniform.sName = "iResolution";
+        resolutionUniform.sData.resize(sizeof(SkPoint));
+        std::memcpy(resolutionUniform.sData.data(), &resolution, sizeof(SkPoint));
+        SkRuntimeShaderBuilder shaderBuilder(result.effect);
+        shaderBuilder.uniform(uniform.sName.c_str())
+            .set(uniform.sData.data(), uniform.sData.size());
+        shaderBuilder.uniform(resolutionUniform.sName.c_str())
+            .set(resolutionUniform.sData.data(), resolutionUniform.sData.size());
+
+        sk_sp<SkShader> shader = shaderBuilder.makeShader(nullptr);
+        if (!shader) {
+            spdlog::error("{}: can not create runtime shader!", __FUNCTION__);
+            return; 
+        }
+        SkPaint paint;
+        paint.setShader(shader);
+        canvas->drawRect(SkRect::MakeWH(mCanvasWidth, mCanvasHeight), paint);
+    }
+
+private:
+    int mCanvasWidth = 0;
+    int mCanvasHeight = 0;
+};
+
 int main(int argc, char* argv[]) {
 #if 1
     spdlog::set_level(spdlog::level::debug);
@@ -304,11 +391,12 @@ int main(int argc, char* argv[]) {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwWindowHint(GLFW_STENCIL_BITS, 0);
+    // glfwWindowHint(GLFW_STENCIL_BITS, 0);
     //glfwWindowHint(GLFW_ALPHA_BITS, 0);
-    glfwWindowHint(GLFW_DEPTH_BITS, 0);
+    // glfwWindowHint(GLFW_DEPTH_BITS, 0);
+    glfwWindowHint(GLFW_REFRESH_RATE, 60);
 
-    GLFWwindow* window = glfwCreateWindow(800, 600, "Skia + GLFW", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(512, 512, "Skia + GLFW", NULL, NULL);
     if (!window) {
         glfwTerminate();
         spdlog::critical("Can not create glfw window handle! terminate it!");
@@ -322,7 +410,7 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-#if 1
+#if 0 // 这个也不需要
     GLint curReadFB;
     GLint curDrawFB;
     glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &curReadFB);
@@ -346,8 +434,9 @@ int main(int argc, char* argv[]) {
 #endif
 
     // 初始化 skia gpu 上下文
-    GrContextOptions options;
-    initGrContextOptions(options);
+    // 不需要下面两行
+    // GrContextOptions options;
+    // initGrContextOptions(options);
     sk_sp<const GrGLInterface> glInterface(GrGLMakeNativeInterface());
     if (glInterface == nullptr) {
         spdlog::info("back to make assembled interface");
@@ -355,7 +444,7 @@ int main(int argc, char* argv[]) {
             nullptr,
             (GrGLGetProc) * [](void*, const char* p) -> void* { return (void*)glfwGetProcAddress(p); });
     }
-    sk_sp<GrDirectContext> grContext(GrDirectContexts::MakeGL(glInterface, options));
+    sk_sp<GrDirectContext> grContext(GrDirectContexts::MakeGL(glInterface));
     if (grContext.get() == nullptr) {
         spdlog::error("Can not create GrDirectContext for Skia");
         return 2;
@@ -365,18 +454,18 @@ int main(int argc, char* argv[]) {
     sk_sp<SkColorSpace> surfaceColorSpace = SkColorSpace::MakeSRGB();
  
     sk_sp<SkSurface> skSurface = nullptr;
-    int oldWidth = 0;
-    int oldHeight = 0;
+    int currentWidth = 0;
+    int currentHeight = 0;
 
     auto rebuildSurface = [&]() {
         int width, height;
         glfwGetFramebufferSize(window, &width, &height);
         //glViewport(0, 0, width, height);
-        if (skSurface && oldWidth == width && oldHeight == height) {
+        if (skSurface && currentWidth == width && currentHeight == height) {
             return true;
         }
-        oldWidth = width;
-        oldHeight = height;
+        currentWidth = width;
+        currentHeight = height;
 
         spdlog::debug("glfw frame buffer size = [{}, {}]", width, height);
         GrGLFramebufferInfo fbInfo;
@@ -413,6 +502,10 @@ int main(int argc, char* argv[]) {
 
     //glfwSwapInterval(1);
 
+    SkCanvas *canvas = skSurface->getCanvas();
+
+    FractalEffect effect;
+    effect.initlize(currentWidth, currentHeight);
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
 
@@ -430,19 +523,13 @@ int main(int argc, char* argv[]) {
             }
         }
 #endif
+        float currentTime = static_cast<float>(glfwGetTime());
         rebuildSurface();
-        SkCanvas *canvas = skSurface->getCanvas();
+        canvas->save();
         canvas->clear(SK_ColorWHITE);
-
-        SkPaint paint;
-        paint.setColor(SK_ColorRED);
-        paint.setAntiAlias(true);
-
-        canvas->drawRoundRect(SkRect::MakeXYWH(50, 50, 600, 400), 30, 30, paint);
-        // Todo: Why Skia/include/gpu/GrDirectContext.h:334:(.text._ZN15GrDirectContext14flushAndSubmitE9GrSyncCpu[_ZN15GrDirectContext14flushAndSubmitE9GrSyncCpu]+0x7d): undefined reference to `GrDirectContext::submit(GrSyncCpu)'
+        effect.draw(canvas, currentTime);
         grContext->flushAndSubmit(GrSyncCpu::kYes);
-        //grContext->flush();
-        //skgpu::ganesh::FlushAndSubmit(skSurface);
+        canvas->restore();
 
         glfwSwapBuffers(window);
     }
