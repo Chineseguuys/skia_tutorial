@@ -4,6 +4,7 @@ build/
 *.code-workspace
 .xmake/
 .cache/
+raw/
 04_skia_clipRect/
 compile_commands.json
 display/
