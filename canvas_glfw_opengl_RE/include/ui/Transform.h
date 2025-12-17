@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <array>
 #include <string>
-#include "Error.h"
+#include "base/Error.h"
 #include "math/vec2.h"
 #include "math/vec3.h"
 #include "math/mat4.h"

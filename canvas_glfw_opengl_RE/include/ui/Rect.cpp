@@ -1,6 +1,6 @@
 #include "Rect.h"
 #include <cstdio>
-#include "StringPrintf.h"
+#include "base/StringPrintf.h"
 
 namespace ui {
 

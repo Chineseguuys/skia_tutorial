@@ -27,18 +27,21 @@ public:
      * Only callable on Ganesh-backed instances of SkiaGpuContext, otherwise fatal.
      */
     virtual sk_sp<GrDirectContext> grDirectContext() {
+        return nullptr;
     }
 
     /**
      * Only callable on Graphite-backed instances of SkiaGpuContext, otherwise fatal.
      */
     virtual std::shared_ptr<skgpu::graphite::Context> graphiteContext() {
+        return nullptr;
     }
 
     /**
      * Only callable on Graphite-backed instances of SkiaGpuContext, otherwise fatal.
      */
     virtual std::shared_ptr<skgpu::graphite::Recorder> graphiteRecorder() {
+        return nullptr;
     }
 
     virtual std::unique_ptr<SkiaBackendTexture> makeBackendTexture(sk_sp<SkImage> buffer,

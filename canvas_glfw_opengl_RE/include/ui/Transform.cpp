@@ -1,7 +1,7 @@
 #include "Transform.h"
-#include "compiler.h"
-#include "StringPrintf.h"
-#include "Error.h"
+#include "base/compiler.h"
+#include "base/StringPrintf.h"
+#include "base/Error.h"
 
 #include "Region.h"
 

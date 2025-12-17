@@ -21,16 +21,22 @@ if is_mode("debug") then
     set_strip("none")
 end
 
+-- base 库
+target("base")
+    set_kind("static")
+    add_files("./include/base/*.cpp")
+    add_includedirs("./include/")
+
 -- skia filter 动态库
 target("skia_filter")
-    set_kind("library", {shared = false})
+    set_kind("static")
     add_files("./include/filters/*.cpp")
     add_includedirs("./include/")
     add_includedirs("/home/yanjiangha/mirrors/sda1_doc/temp_storage/", "/home/yanjiangha/mirrors/sda1_doc/temp_storage/skia/")
 
 -- ui 库
 target("ui")
-    set_kind("library", {shared = false})
+    set_kind("static")
     add_files("./include/ui/*.cpp")
     add_includedirs("./include/")
     add_includedirs("/home/yanjiangha/mirrors/sda1_doc/temp_storage/", "/home/yanjiangha/mirrors/sda1_doc/temp_storage/skia/")
@@ -54,13 +60,14 @@ target("main")
 
     add_rpathdirs("/home/yanjiangha/mirrors/sda1_doc/temp_storage/skia/out/Shared/")
 
-    -- 链接 skia 库
-    add_links("skia", "skshaper", "skunicode_core", "skunicode_icu", "skparagraph")
-    -- glfw 引入
-    add_links("glfw3", "glad", "GL")
-
+    add_deps("ui", "skia_filter", "base")
     add_packages("spdlog")
     add_packages("cli11")
+
+    -- 链接 skia 库
+    add_links("skia", "skshaper", "skunicode_core", "skunicode_icu", "skparagraph", "skia_filter", "ui", "base")
+    -- glfw 引入
+    add_links("glfw3", "glad", "GL")
 
     -- 生成 compile_commands.json（需要先安装插件）
     add_rules("plugin.compile_commands.autoupdate")

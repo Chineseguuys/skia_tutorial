@@ -6,12 +6,15 @@
 #include "ui/FloatRect.h"
 #include "ui/Point.h"
 #include "ui/Size.h"
+#include "math/HashCombine.h"
 
-#include "ARect.h"
+#include "base/ARect.h"
+
+#include "utils/Flattenable.h"
 
 namespace ui {
 
-class Rect : public ARect
+class Rect : public ARect, public LightFlattenable<Rect>
 {
 public:
     typedef ARect::value_type value_type;
@@ -207,6 +210,15 @@ std::string to_string(const Rect& rect);
 // Defining PrintTo helps with Google Tests.
 void PrintTo(const Rect& rect, ::std::ostream* os);
 
-}
+} // namespace ui
+
+namespace std {
+template <>
+struct hash<ui::Rect> {
+    size_t operator()(const ui::Rect& rect) const {
+        return hashCombine(rect.left, rect.top, rect.right, rect.bottom);
+    }
+};
+} // namespace std
 
 #endif // end _RECT_H_

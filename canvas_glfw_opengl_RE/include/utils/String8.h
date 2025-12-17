@@ -9,7 +9,7 @@
 #include <string.h>
 #include <stdarg.h>
 
-#include "Error.h"
+#include "base/Error.h"
 
 #if __cplusplus >= 202002L
 #include <compare>
