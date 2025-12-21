@@ -1,14 +1,14 @@
 #ifndef _SIKA_GPU_CONTEXT_H_
 #define _SIKA_GPU_CONTEXT_H_
 
-#include "include/core/SkImage.h"
+#include "skia/include/core/SkImage.h"
 #include "skia/include/core/SkSurface.h"
 #include "skia/include/gpu/ganesh/GrDirectContext.h"
 #include "skia/include/gpu/ganesh/gl/GrGLInterface.h"
 #include "skia/include/gpu/graphite/Context.h"
 
 #include "SkiaBackendTexture.h"
- 
+
 namespace renderengine {
 namespace skia {
 

@@ -41,6 +41,19 @@ target("ui")
     add_includedirs("./include/")
     add_includedirs("/home/yanjiangha/mirrors/sda1_doc/temp_storage/", "/home/yanjiangha/mirrors/sda1_doc/temp_storage/skia/")
 
+-- cache 库
+target("cache")
+    set_kind("static")
+    add_files("./include/cache/*.cpp")
+    add_includedirs("./include/")
+    add_includedirs("/home/yanjiangha/mirrors/sda1_doc/temp_storage/", "/home/yanjiangha/mirrors/sda1_doc/temp_storage/skia/")
+
+target("compat")
+    set_kind("static")
+    add_files("./include/skia/compat/*.cpp")
+    add_includedirs("./include/")
+    add_includedirs("/home/yanjiangha/mirrors/sda1_doc/temp_storage/", "/home/yanjiangha/mirrors/sda1_doc/temp_storage/skia/")
+
 -- 定义目标类型为可执行程序
 target("main")
     set_kind("binary")
@@ -60,12 +73,12 @@ target("main")
 
     add_rpathdirs("/home/yanjiangha/mirrors/sda1_doc/temp_storage/skia/out/Shared/")
 
-    add_deps("ui", "skia_filter", "base")
+    add_deps("ui", "skia_filter", "base", "cache", "compat")
     add_packages("spdlog")
     add_packages("cli11")
 
     -- 链接 skia 库
-    add_links("skia", "skshaper", "skunicode_core", "skunicode_icu", "skparagraph", "skia_filter", "ui", "base")
+    add_links("skia", "skshaper", "skunicode_core", "skunicode_icu", "skparagraph", "skia_filter", "ui", "base", "cache","compat")
     -- glfw 引入
     add_links("glfw3", "glad", "GL")
 

@@ -3,6 +3,8 @@
 
 #include <vector>
 
+#include "math/vec2.h"
+#include "math/vec3.h"
 #include "skia/include/core/SkImage.h"
 #include "skia/include/core/SkM44.h"
 
@@ -11,6 +13,7 @@
 #include "ui/ShadowSettings.h"
 #include "ui/BlurRegion.h"
 #include "gui/BorderSettings.h"
+#include "math/mat4.h"
 
 namespace renderengine {
 
@@ -27,7 +30,7 @@ struct Buffer {
     bool useTextureFiltering = false;
 
     // Transform matrix to apply to texture coordinates.
-    SkM44 textureTransform = SkM44();
+    mat4 textureTransform = mat4();
 
     // Whether to use pre-multiplied alpha.
     bool usePremultipliedAlpha = true;
@@ -49,7 +52,7 @@ struct Geometry {
     ui::FloatRect originalBounds = ui::FloatRect();
 
     // Transform matrix to apply to mesh coordinates.
-    SkM44 positionTransform = SkM44();
+    mat4 positionTransform = mat4();
 
     // Radius of rounded corners, if greater than 0. Otherwise, this layer's
     // corners are not rounded.
@@ -60,7 +63,7 @@ struct Geometry {
     // rectangle to figure out how to apply the radius for this layer. The crop rectangle will be
     // in local layer coordinate space, so we have to take the layer transform into account when
     // walking up the tree.
-    SkV2 roundedCornersRadius = SkV2();
+    vec2 roundedCornersRadius = vec2();
 
     // Rectangle within which corners will be rounded.
     ui::FloatRect roundedCornersCrop = ui::FloatRect();
@@ -73,7 +76,7 @@ struct PixelSource {
     // The solid color with which to fill the layer.
     // This should only be populated if we don't render from an application
     // buffer.
-    SkV3 solidColor = SkV3();
+    vec3 solidColor = vec3();
 };
 
 struct LayerSettings {
@@ -91,7 +94,7 @@ struct LayerSettings {
 
     // Additional layer-specific color transform to be applied before the global
     // transform.
-    SkM44 colorTransform = SkM44();
+    mat4 colorTransform = mat4();
 
     // True if blending will be forced to be disabled.
     bool disableBlending = false;
@@ -110,7 +113,7 @@ struct LayerSettings {
 
     // Transform matrix used to convert the blurRegions geometry into the same
     // coordinate space as LayerSettings.geometry
-    SkM44 blurRegionTransform = SkM44();
+    mat4 blurRegionTransform = mat4();
 
     // StretchEffect stretchEffect;
     // EdgeExtensionEffect edgeExtensionEffect;

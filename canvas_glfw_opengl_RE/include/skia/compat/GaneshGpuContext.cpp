@@ -8,6 +8,8 @@
 #include "skia/include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "skia/include/gpu/ganesh/gl/GrGLDirectContext.h"
 
+#include <spdlog/spdlog.h>
+
 namespace renderengine {
 namespace skia {
 
@@ -47,6 +49,7 @@ std::unique_ptr<SkiaBackendTexture> GaneshGpuContext::makeBackendTexture(sk_sp<S
 }
 
 sk_sp<SkSurface> GaneshGpuContext::createRenderTarget(SkImageInfo imageInfo) {
+    spdlog::debug("{}:{}", __func__, __LINE__);
     constexpr int kSampleCount = 1; // enable AA
     constexpr SkSurfaceProps* kProps = nullptr;
     constexpr bool kMipmapped = false;

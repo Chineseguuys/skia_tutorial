@@ -1,15 +1,18 @@
 // for glfw direct rendering
 #include "filters/GaussianBlurFilter.h"
 #include "include/core/SkBlendMode.h"
+#include "include/core/SkColorFilter.h"
 #include "include/core/SkM44.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkTileMode.h"
 #include "include/utils/SkShadowUtils.h"
-#include "src/codec/SkSampler.h"
-#include "ui/Dataspace.h"
-#include "ui/FloatRect.h"
+#include "math/vec2.h"
+#include <memory>
+#include <spdlog/common.h>
+#include <unordered_map>
+
 #define SK_GANESH
 #define SK_GL
 
@@ -40,6 +43,10 @@
 #include "skia/include/core/SkRect.h"
 #include "skia/include/core/SkRRect.h"
 #include "skia/include/core/SkSurfaceProps.h"
+
+#include "src/codec/SkSampler.h"
+
+#include "skia/include/effects/SkColorMatrix.h"
 
 #include "include/gpu/ganesh/GrBackendSurface.h"
 #include "include/gpu/ganesh/GrContextThreadSafeProxy.h"
@@ -84,9 +91,16 @@
 #include <string>
 #include <vector>
 
+#include "math/mat4.h"
 #include "renderengine/LayerSettings.h"
 #include "renderengine/ColorSpaces.h"
+#include "renderengine/DisplaySettings.h"
 #include "filters/BlurFilter.h"
+#include "filters/KawaseBlurDualFilter.h"
+#include "ui/Dataspace.h"
+#include "ui/FloatRect.h"
+#include "skia/compat/SkiaGpuContext.h"
+#include "cache/SkSLCacheMonitor.h"
 
 // modified for compile error
 #ifdef Success
@@ -107,6 +121,8 @@ static int DRAW_HEIGHT = 256;
 static int RESOURCE_ID = 3;
 static bool SAVE_BITMAP = false;
 static bool SAVE_SKP = false;
+static int LOG_LEVEL = spdlog::level::info;
+
 static const std::vector<std::string> pngResources = {"../resources/example_1.png",
     "../resources/example_2.png",
     "../resources/example_3.png",
@@ -120,6 +136,10 @@ static const std::vector<std::string> rgbaRawResources = {
     "../resources/@5@layer@99@3008x2120_bpp_1.raw"
 };
 static const std::string fontDir = "../fonts/";
+
+
+// sksl cache monitor
+renderengine::skia::SkSLCacheMonitor sSKSLCacheMonitor;
 
 std::string generate_filename(const std::string& prefix, const std::string& postfix) {
     // 获取当前系统时间
@@ -261,6 +281,14 @@ bool loadRGBARawFile(const char* fileName, int width, int height, uint32_t** raw
     return true;
 }
 
+std::unique_ptr<renderengine::skia::SkiaGpuContext> createContexts(sk_sp<const GrGLInterface> glInterface) {
+    std::unique_ptr<renderengine::skia::SkiaGpuContext> context =
+        renderengine::skia::SkiaGpuContext::MakeGL_Ganesh(glInterface, sSKSLCacheMonitor);
+
+    return context;
+}
+
+
 static inline bool layerHasBlur(const renderengine::LayerSettings& layer,
                                 bool colorTransformModifiesAlpha) {
     if (layer.backgroundBlurRadius > 0 || layer.blurRegions.size()) {
@@ -278,6 +306,31 @@ static inline SkColor getSkColor(const SkV4& color) {
 
 static inline SkPoint3 getSkPoint3(const SkV3& vector) {
     return SkPoint3::Make(vector.x, vector.y, vector.z);
+}
+
+static SkColorMatrix toSkColorMatrix(const ::mat4& matrix) {
+    return SkColorMatrix(matrix[0][0], matrix[1][0], matrix[2][0], matrix[3][0], 0, matrix[0][1],
+                         matrix[1][1], matrix[2][1], matrix[3][1], 0, matrix[0][2], matrix[1][2],
+                         matrix[2][2], matrix[3][2], 0, matrix[0][3], matrix[1][3], matrix[2][3],
+                         matrix[3][3], 0);
+}
+
+static inline SkM44 getSkM44(const ::mat4& matrix) {
+    return SkM44(matrix[0][0], matrix[1][0], matrix[2][0], matrix[3][0],
+                 matrix[0][1], matrix[1][1], matrix[2][1], matrix[3][1],
+                 matrix[0][2], matrix[1][2], matrix[2][2], matrix[3][2],
+                 matrix[0][3], matrix[1][3], matrix[2][3], matrix[3][3]);
+}
+
+static SkRRect getBlurRRect(const BlurRegion& region) {
+    const auto rect = SkRect::MakeLTRB(region.left, region.top, region.right, region.bottom);
+    const SkVector radii[4] = {SkVector::Make(region.cornerRadiusTL, region.cornerRadiusTL),
+                               SkVector::Make(region.cornerRadiusTR, region.cornerRadiusTR),
+                               SkVector::Make(region.cornerRadiusBR, region.cornerRadiusBR),
+                               SkVector::Make(region.cornerRadiusBL, region.cornerRadiusBL)};
+    SkRRect roundedRect;
+    roundedRect.setRectRadii(rect, radii);
+    return roundedRect;
 }
 
 class AutoSaveRestore {
@@ -311,7 +364,7 @@ static inline SkRect getSkRect(const ui::FloatRect& rect) {
  *  produce the insected roundRect. If false, the returned state of the radii param is undefined.
  */
 static bool intersectionIsRoundRect(const SkRect& bounds, const SkRect& crop,
-                                    const SkRect& insetCrop, const SkV2& cornerRadius,
+                                    const SkRect& insetCrop, const vec2& cornerRadius,
                                     SkVector radii[4]) {
     const bool leftEqual = bounds.fLeft == crop.fLeft;
     const bool topEqual = bounds.fTop == crop.fTop;
@@ -373,7 +426,7 @@ static bool intersectionIsRoundRect(const SkRect& bounds, const SkRect& crop,
 
 static inline std::pair<SkRRect, SkRRect> getBoundsAndClip(const ui::FloatRect& boundsRect,
                                                            const ui::FloatRect& cropRect,
-                                                           const SkV2& cornerRadius) {
+                                                           const vec2& cornerRadius) {
     const SkRect bounds = getSkRect(boundsRect);
     const SkRect crop = getSkRect(cropRect);
 
@@ -446,30 +499,33 @@ void initGrContextOptions(GrContextOptions& options) {
 }
 
 int main(int argc, char* argv[]) {
-#if 1
-    spdlog::set_level(spdlog::level::debug);
-    spdlog::set_pattern("[%P:%t][%Y-%m-%d %H:%M:%S.%e] [%^%-8l%$] %v");
-#endif
-
     // args parser
     CLI::App app{"Skia Fiddle"};
-    app.add_option("-W,--width", DRAW_WIDTH, "canvas draw width")
+    app.add_option("-W,--width", DRAW_WIDTH, "Canvas draw width")
         ->check(CLI::Range(16, 4028))
         ->default_val(256);
-    app.add_option("-H,--height", DRAW_HEIGHT, "canvas draw height")
+    app.add_option("-H,--height", DRAW_HEIGHT, "Canvas draw height")
         ->check(CLI::Range(16, 8056))
         ->default_val(256);
-    app.add_option("-S,--save", SAVE_BITMAP, "save canvas draw to png file")
+    app.add_option("-S,--save", SAVE_BITMAP, "Save canvas draw to png file")
         ->check(CLI::IsMember({0, 1}))
         ->default_val(0);
-    app.add_option("-R,--resource", RESOURCE_ID, "resource id for program loading image")
+    app.add_option("-R,--resource", RESOURCE_ID, "Resource id for program loading image")
         ->check(CLI::Range(0, 5))
         ->default_val(2);
-    app.add_option("-P,--picture", SAVE_SKP, "Save Canvas draw to skp file")
+    app.add_option("-P,--picture", SAVE_SKP, "Save canvas draw to skp file")
         ->check(CLI::IsMember({0, 1}))
         ->default_val(0);
+    app.add_option("-L,--loglevel", LOG_LEVEL, "Set leg level for spdlog")
+        ->check(CLI::Range(spdlog::level::trace, spdlog::level::off))
+        ->default_val(spdlog::level::info);
     //catch exception and parse the command lines
     CLI11_PARSE(app, argc, argv);
+
+#if 1
+    spdlog::set_level(static_cast<spdlog::level::level_enum>(LOG_LEVEL));
+    spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%-4l%$] %v");
+#endif
 
     // init glfw
     glfwSetErrorCallback(glfw_error_callback);
@@ -578,11 +634,23 @@ int main(int argc, char* argv[]) {
 
     // ------- begin create blur filter --------
     renderengine::skia::BlurFilter* blurFilter = new renderengine::skia::GaussianBlurFilter();
+    if (!blurFilter) {
+        spdlog::error("Can not create Blur Filter");
+    }
     // --------end create blur filter --------
 
+    // --------begin create Skia gpu context --------
+    std::unique_ptr<renderengine::skia::SkiaGpuContext> context = createContexts(glInterface);
+    if (!context) {
+        spdlog::error("Can not create Skia Gpu Context");
+    }
+    // ----------end of create Skia gpu context --------
+
     // -----------start of renderengine layer settings prepare -----------
+    renderengine::DisplaySettings displaySettings;
     std::vector<renderengine::LayerSettings> layers;
 
+#ifdef RENDER_DEMO_1
     renderengine::LayerSettings bbqLayerSettings;
     bbqLayerSettings.name = "Wallpaper BBQ wrapper#94";
     bbqLayerSettings.source.buffer.buffer = createImageFromFile(
@@ -639,17 +707,93 @@ int main(int argc, char* argv[]) {
     statusBarLayerSettings.borderSettings.color = 0x00;
 
     layers.push_back(statusBarLayerSettings);
+#endif
+
+#if 1
+    renderengine::LayerSettings bbqLayerSettings;
+    bbqLayerSettings.name = "Wallpaper BBQ wrapper#100";
+    bbqLayerSettings.source.buffer.buffer = createImageFromFile(
+        "./raw/20251217_234809/@24@layer@100@3600x2544_bpp_1.raw",
+        3600,
+        2544);
+    bbqLayerSettings.alpha = 1.00000f;
+    bbqLayerSettings.sourceDataspace = ui::Dataspace::HAL_DATASPACE_V0_SRGB;
+
+    bbqLayerSettings.geometry.boundaries = ui::FloatRect(0, 0, 3000, 2120);
+    bbqLayerSettings.geometry.roundedCornersCrop = ui::FloatRect(0, 0, 3000, 2120);
+
+    bbqLayerSettings.shadow.length = 0.000000f;
+    bbqLayerSettings.borderSettings.strokeWidth = 0.0f;
+    bbqLayerSettings.borderSettings.color = 0x00;
+
+    layers.push_back(bbqLayerSettings);
+
+    renderengine::LayerSettings launcherLayerSettings;
+    launcherLayerSettings.name = "com.android.launcher.Launcher#12588";
+    launcherLayerSettings.source.buffer.buffer = createImageFromFile(
+        "./raw/20251217_234809/@25@layer@12588@3000x2120_bpp_1.raw",
+            3000,
+            2120);
+    launcherLayerSettings.source.buffer.isOpaque = false;
+
+    launcherLayerSettings.geometry.boundaries = ui::FloatRect(0.000000, 0.000000, 3000.000000, 2120.000000);
+    launcherLayerSettings.geometry.roundedCornersCrop = ui::FloatRect(0.000000, 0.000000, 3000.000000, 2120.000000);
+
+    launcherLayerSettings.shadow.length = 0.000000f;
+    launcherLayerSettings.borderSettings.strokeWidth = 0.0f;
+    launcherLayerSettings.borderSettings.color = 0x00;
+
+
+    launcherLayerSettings.alpha = 1.0f;
+    launcherLayerSettings.sourceDataspace = ui::Dataspace::HAL_DATASPACE_DISPLAY_P3;
+    launcherLayerSettings.backgroundBlurRadius = 19;
+
+    layers.push_back(launcherLayerSettings);
+
+#endif
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
         rebuildSurface();
-        SkCanvas *canvas = skSurface->getCanvas();
+        sk_sp<SkSurface> dstSurface = skSurface;
+        SkCanvas* dstCanvas = dstSurface->getCanvas();
+        if (dstCanvas == nullptr) {
+            spdlog::error("Cannot acquire canvas from Skia.");
+            break;
+        }
+
+        sk_sp<SkColorFilter> displayColorTransform;
+        if (displaySettings.colorTransform != mat4() && !displaySettings.deviceHandlesColorTransform) {
+            displayColorTransform = SkColorFilters::Matrix(toSkColorMatrix(displaySettings.colorTransform));
+        }
+        const bool ctModifiesAlpha =
+            displayColorTransform && !displayColorTransform->isAlphaUnchanged();
+
+        sk_sp<SkSurface> activeSurface(dstSurface);
+        SkCanvas *canvas = dstCanvas;
 
         const renderengine::LayerSettings* blurCompositeLayer = nullptr;
         if (blurFilter) {
             bool requireCompositionLayer = false;
             for (const auto& layer : layers) {
-
+                if (!layerHasBlur(layer, ctModifiesAlpha)) {
+                    continue;
+                }
+                if (layer.backgroundBlurRadius > 0 &&
+                    layer.backgroundBlurRadius < blurFilter->getMaxCrossFadeRadius()) {
+                        requireCompositionLayer = true;
+                }
+                for (auto region : layer.blurRegions) {
+                    if (region.blurRadius < blurFilter->getMaxCrossFadeRadius()) {
+                        requireCompositionLayer = true;
+                    }
+                }
+                if (requireCompositionLayer) {
+                    activeSurface = dstSurface->makeSurface(dstSurface->imageInfo());
+                    canvas = activeSurface->getCanvas();
+                    blurCompositeLayer = &layer;
+                    break;
+                }
             }
         }
 
@@ -659,13 +803,88 @@ int main(int argc, char* argv[]) {
         float currentTime = static_cast<float>(glfwGetTime());
 
         for (const auto& layer : layers) {
+            sk_sp<SkImage> blurInput;
+            if (blurCompositeLayer == &layer) {
+                blurInput = activeSurface->makeTemporaryImage();
+
+                if (layer.blurRegions.size()) {
+                    SkPaint paint;
+                    paint.setBlendMode(SkBlendMode::kSrc);
+                    dstCanvas->drawImage(blurInput, 0, 0, SkSamplingOptions(), &paint);
+                }
+
+                canvas = dstCanvas;
+                surfaceAutoSaveRestore.replace(canvas);
+                activeSurface = dstSurface;
+            }
+
             SkAutoCanvasRestore layerAutoRestore(canvas, true);
-            canvas->concat(layer.geometry.positionTransform.asM33());
+            canvas->concat(getSkM44(layer.geometry.positionTransform).asM33());
 
             const auto [bounds, roundRectClip] =
                 getBoundsAndClip(layer.geometry.boundaries,
                                  layer.geometry.roundedCornersCrop,
                                  layer.geometry.roundedCornersRadius);
+
+            if (blurFilter && layerHasBlur(layer, ctModifiesAlpha)) {
+                std::unordered_map<uint32_t, sk_sp<SkImage> > cachedBlurs;
+
+                SkRect blurRect = canvas->getTotalMatrix().mapRect(bounds.rect());
+                spdlog::debug("[{}:{}]blurRect = [{},{},{},{}]", __func__, __LINE__,
+                    blurRect.fLeft, blurRect.fTop, blurRect.fRight, blurRect.fBottom);
+                if (!blurRect.intersect(SkRect::Make(canvas->getDeviceClipBounds()))) {
+                    spdlog::warn("Blur rect does not intersect clip bounds.");
+                }
+
+                SkAutoCanvasRestore arc(canvas, true);
+                if (!roundRectClip.isEmpty()) {
+                    canvas->clipRRect(roundRectClip, true);
+                }
+
+                if (blurRect.width() > 0 && blurRect.height() > 0) {
+                    if (!blurInput) {
+                        bool requireCrossFadeWithBlurInput = false;
+                        if (layer.backgroundBlurRadius > 0 &&
+                            layer.backgroundBlurRadius < blurFilter->getMaxCrossFadeRadius()) {
+                                requireCrossFadeWithBlurInput = true;
+                        }
+                        for (auto region : layer.blurRegions) {
+                            if (region.blurRadius < blurFilter->getMaxCrossFadeRadius()) {
+                                requireCrossFadeWithBlurInput = true;
+                            }
+                        }
+                        spdlog::debug("{}:{} requireCrossFadeWithBlurInput={}", __func__, __LINE__, requireCrossFadeWithBlurInput);
+                        if (requireCrossFadeWithBlurInput) {
+                            blurInput = activeSurface->makeImageSnapshot();
+                        } else {
+                            blurInput = activeSurface->makeTemporaryImage();
+                        }
+                    }
+
+                    if (layer.backgroundBlurRadius > 0) {
+                        spdlog::debug("BackgroundBlur");
+                        auto blurredImage = blurFilter->generate(context.get(),
+                            layer.backgroundBlurRadius, blurInput, blurRect);
+                        cachedBlurs[layer.backgroundBlurRadius] = blurredImage;
+
+                        blurFilter->drawBlurRegion(canvas, bounds, layer.backgroundBlurRadius,
+                            1.0f, blurRect, blurredImage, blurInput);
+                    }
+
+                    canvas->concat(getSkM44(layer.blurRegionTransform).asM33());
+                    for (auto region : layer.blurRegions) {
+                        if (cachedBlurs[region.blurRadius] == nullptr) {
+                            spdlog::debug("BlurRegion");
+                            cachedBlurs[region.blurRadius] =
+                                blurFilter->generate(context.get(), region.blurRadius, blurInput, blurRect);
+                        }
+
+                        blurFilter->drawBlurRegion(canvas, getBlurRRect(region),
+                            region.blurRadius, region.alpha, blurRect,
+                            cachedBlurs[region.blurRadius], blurInput);
+                    }
+                }
+            }
 
             if (layer.shadow.length > 0) {
                 SkRRect shadowBounds, shadowClip;
@@ -724,7 +943,7 @@ int main(int argc, char* argv[]) {
                                                         : kUnpremul_SkAlphaType;
 
                 sk_sp<SkImage> image = item.buffer;
-                auto texMatrix = item.textureTransform.asM33();
+                auto texMatrix = getSkM44(item.textureTransform).asM33();
                 texMatrix.preScale(1.0f / bounds.width(), 1.0f / bounds.height());
                 texMatrix.postScale(image->width(), image->height());
 
