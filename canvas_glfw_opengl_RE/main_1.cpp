@@ -573,11 +573,27 @@ int main(int argc, char* argv[]) {
             nullptr,
             (GrGLGetProc) * [](void*, const char* p) -> void* { return (void*)glfwGetProcAddress(p); });
     }
+
+    // --------begin create Skia gpu context --------
+    std::unique_ptr<renderengine::skia::SkiaGpuContext> context = createContexts(glInterface);
+    if (!context) {
+        spdlog::error("Can not create Skia Gpu Context");
+    }
+    // ----------end of create Skia gpu context --------
+
+#if 0
     sk_sp<GrDirectContext> grContext(GrDirectContexts::MakeGL(glInterface));
     if (grContext.get() == nullptr) {
         spdlog::error("Can not create GrDirectContext for Skia");
         return 2;
     }
+#else
+    sk_sp<GrDirectContext> grContext = context->grDirectContext();
+    if (grContext.get() == nullptr) {
+        spdlog::error("Can not create GrDirectContext for Skia");
+        return 2;
+    }
+#endif
 
     SkColorType surfaceColorType = SkColorType::kRGBA_8888_SkColorType;
     sk_sp<SkColorSpace> surfaceColorSpace = SkColorSpace::MakeSRGB();
@@ -638,13 +654,6 @@ int main(int argc, char* argv[]) {
         spdlog::error("Can not create Blur Filter");
     }
     // --------end create blur filter --------
-
-    // --------begin create Skia gpu context --------
-    std::unique_ptr<renderengine::skia::SkiaGpuContext> context = createContexts(glInterface);
-    if (!context) {
-        spdlog::error("Can not create Skia Gpu Context");
-    }
-    // ----------end of create Skia gpu context --------
 
     // -----------start of renderengine layer settings prepare -----------
     renderengine::DisplaySettings displaySettings;
