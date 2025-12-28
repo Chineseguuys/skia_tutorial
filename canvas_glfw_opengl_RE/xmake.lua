@@ -47,6 +47,7 @@ target("cache")
     add_files("./include/cache/*.cpp")
     add_includedirs("./include/")
     add_includedirs("/home/yanjiangha/mirrors/sda1_doc/temp_storage/", "/home/yanjiangha/mirrors/sda1_doc/temp_storage/skia/")
+    add_links("z", "crypto")
 
 target("compat")
     set_kind("static")
@@ -73,7 +74,7 @@ target("main")
 
     add_rpathdirs("/home/yanjiangha/mirrors/sda1_doc/temp_storage/skia/out/Shared/")
 
-    add_deps("ui", "skia_filter", "base", "cache", "compat")
+    add_deps("ui", "skia_filter", "base", "cache", "compat", "cache")
     add_packages("spdlog")
     add_packages("cli11")
 

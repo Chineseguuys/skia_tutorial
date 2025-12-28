@@ -1,0 +1,61 @@
+@startuml
+class SkRefCnt
+class SkCapabilities
+class GrProgramInfo
+class GrCaps {
+    +GrProgramDesc makeDesc(GrRenderTarget*, const GrProgramInfo&,ProgramDescOverrideFlags overrideFlags = ProgramDescOverrideFlags::kNone)
+}
+class GrGLCaps
+
+class GrProgramDesc {
+    -skia_private::STArray<kPreAllocSize, uint32_t, true> fKey;
+    -uint32_t fInitialKeyLength
+    +const uint32_t* asKey()
+    +uint32_t keyLength()
+    +bool isValid()
+}
+
+class GrGLSLShaderBuilder {
+    +void finalize(uint32_t visibility)
+    #void onFinalize() = 0
+}
+class GrGLSLVertexGeoBuilder
+class GrGLSLVertexBuilder {
+    #void onFinalize() override
+}
+
+class GrGLSLFPFragmentBuilder
+class GrGLSLXPFragmentBuilder
+class GrGLSLFragmentShaderBuilder
+
+class GrGLProgramBuilder {
+    +sk_sp<GrGLProgram> finalize(const GrGLPrecompiledProgram* precompiledProgram)
+    +sk_sp<GrGLProgram> CreateProgram()
+    +sk_sp<GrGLProgram> createProgram(GrGLuint programID);
+    -bool compileAndAttachShaders()
+    -void storeShaderInCache()
+}
+
+class GrGLSLProgramBuilder {
+    #void finalizeShaders()
+    -GrGLSLVertexBuilder          fVS;
+    -GrGLSLFragmentShaderBuilder  fFS;
+}
+
+SkRefCnt --|> SkCapabilities
+SkCapabilities --|> GrProgramInfo
+SkCapabilities --|> GrCaps
+GrCaps --|> GrGLCaps
+
+GrGLSLShaderBuilder --|> GrGLSLVertexGeoBuilder
+GrGLSLVertexGeoBuilder --|> GrGLSLVertexBuilder
+
+GrGLSLShaderBuilder --|> GrGLSLFPFragmentBuilder
+GrGLSLShaderBuilder --|> GrGLSLXPFragmentBuilder
+GrGLSLFPFragmentBuilder --|> GrGLSLFragmentShaderBuilder
+GrGLSLXPFragmentBuilder --|> GrGLSLFragmentShaderBuilder
+
+GrGLSLProgramBuilder --|> GrGLProgramBuilder
+GrGLSLProgramBuilder *..> GrGLSLVertexBuilder : fVS
+GrGLSLProgramBuilder *..> GrGLSLFragmentShaderBuilder : fFS
+@enduml

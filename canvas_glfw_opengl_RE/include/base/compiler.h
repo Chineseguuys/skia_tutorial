@@ -25,4 +25,7 @@
   TypeName() = delete;                           \
   DISALLOW_COPY_AND_ASSIGN(TypeName)
 
+
+
+
 #endif // end _COMPILER_H_

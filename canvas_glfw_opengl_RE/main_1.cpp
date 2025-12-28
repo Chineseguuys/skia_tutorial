@@ -100,7 +100,7 @@
 #include "ui/Dataspace.h"
 #include "ui/FloatRect.h"
 #include "skia/compat/SkiaGpuContext.h"
-#include "cache/SkSLCacheMonitor.h"
+#include "cache/ShaderCache.h"
 
 // modified for compile error
 #ifdef Success
@@ -136,10 +136,8 @@ static const std::vector<std::string> rgbaRawResources = {
     "../resources/@5@layer@99@3008x2120_bpp_1.raw"
 };
 static const std::string fontDir = "../fonts/";
-
-
 // sksl cache monitor
-renderengine::skia::SkSLCacheMonitor sSKSLCacheMonitor;
+cache::ShaderCache& sSKSLCacheMonitor = cache::ShaderCache::get();
 
 std::string generate_filename(const std::string& prefix, const std::string& postfix) {
     // 获取当前系统时间
@@ -282,6 +280,8 @@ bool loadRGBARawFile(const char* fileName, int width, int height, uint32_t** raw
 }
 
 std::unique_ptr<renderengine::skia::SkiaGpuContext> createContexts(sk_sp<const GrGLInterface> glInterface) {
+    sSKSLCacheMonitor.setFilename("./shaderCacheTest");
+    sSKSLCacheMonitor.initShaderDiskCache();
     std::unique_ptr<renderengine::skia::SkiaGpuContext> context =
         renderengine::skia::SkiaGpuContext::MakeGL_Ganesh(glInterface, sSKSLCacheMonitor);
 
