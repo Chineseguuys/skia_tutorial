@@ -1,6 +1,15 @@
 @startuml
+class SkRefCntBase {
+    - std::atomic<int32_t> fRefCnt
+    + void ref() const
+    + void unref() const
+}
 class SkRefCnt
-class SkCapabilities
+class SkCapabilities {
+    + static sk_sp<const SkCapabilities> RasterBackend()
+    + SkSL::Version skslVersion() const
+    # void initSkCaps(const SkSL::ShaderCaps*)
+}
 class GrProgramInfo
 class GrCaps {
     +GrProgramDesc makeDesc(GrRenderTarget*, const GrProgramInfo&,ProgramDescOverrideFlags overrideFlags = ProgramDescOverrideFlags::kNone)
@@ -42,8 +51,64 @@ class GrGLSLProgramBuilder {
     -GrGLSLFragmentShaderBuilder  fFS;
 }
 
+class ShaderCache {
+    - static ShaderCache sCache
+    + static ShaderCache& get()
+    + void initShaderDiskCache(const void* identity, ssize_t size)
+    + void initShaderDiskCache()
+    + sk_sp<SkData> load(const SkData& key)
+    + void store(const SkData& key, const SkData& data, const SkString& description)
+
+    - ShaderCache()
+    - bool validateCache(const void* identity, ssize_t size)
+    - void set(const void* key, size_t keySize, const void* value, size_t valueSize)
+    - void saveToDiskLocked()
+}
+
+class PersistentCache {
+    + virtual sk_sp<SkData> load(const SkData& key)
+    + virtual void store(const SkData& /*key*/, const SkData& /*data*/)
+    + virtual void store(const SkData& key, const SkData& data, const SkString& /*description*/)
+}
+
+class GrOp {
+    + void prePrepare(..)
+    + void prepare(GrOpFlushState* state)
+    + void execute(GrOpFlushState* state, const SkRect& chainBounds)
+    - virtual void onPrePrepare(..)
+    - virtual void onPrepare(GrOpFlushState*)
+    - virtual void onExecute(GrOpFlushState*, const SkRect& chainBounds)
+    - GrOp* fPrevInChain
+    - std::shared_ptr<GrOp> fNextInChain
+}
+
+class GrDrawOp {
+    + virtual GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*, GrClampType)
+}
+
+class GrMeshDrawOp {
+    # void createProgramInfo(..)
+    # void createProgramInfo(GrMeshDrawTarget*)
+    # virtual void onPrePrepareDraws(..)
+    - virtual void onCreateProgramInfo(..)
+    - void onPrePrepare(..)
+    - void onPrepare(GrOpFlushState* state)
+    - virtual void onPrepareDraws(GrMeshDrawTarget*)
+}
+
+class FillRectOpImpl {
+    static std::shared_ptr<GrOp> Make(..)
+}
+
+class FillRectOp {
+    + static std::shared_ptr<GrOp> Make(..)
+    + static std::shared_ptr<GrOp> MakeNonAARect(..)
+    + static void AddFillRectOps(..)
+    - static std::shared_ptr<GrOp> MakeOp(..)
+}
+
+SkRefCntBase --|> SkRefCnt
 SkRefCnt --|> SkCapabilities
-SkCapabilities --|> GrProgramInfo
 SkCapabilities --|> GrCaps
 GrCaps --|> GrGLCaps
 
@@ -58,4 +123,16 @@ GrGLSLXPFragmentBuilder --|> GrGLSLFragmentShaderBuilder
 GrGLSLProgramBuilder --|> GrGLProgramBuilder
 GrGLSLProgramBuilder *..> GrGLSLVertexBuilder : fVS
 GrGLSLProgramBuilder *..> GrGLSLFragmentShaderBuilder : fFS
+
+PersistentCache --|> ShaderCache
+
+GrOp --|> GrDrawOp
+GrDrawOp --|> GrMeshDrawOp
+GrMeshDrawOp --|> FillRectOpImpl
+FillRectOp -- FillRectOpImpl : > Friend类
+
+note left of PersistentCache
+skia中缓存shader cache的抽象类
+子类需要实现load和store方法
+end note
 @enduml
