@@ -97,7 +97,8 @@ class GrMeshDrawOp {
 }
 
 class FillRectOpImpl {
-    static std::shared_ptr<GrOp> Make(..)
+    + static std::shared_ptr<GrOp> Make(..)
+    + void onExecute(GrOpFlushState*, const SkRect& chainBounds)
 }
 
 class FillRectOp {
@@ -107,10 +108,45 @@ class FillRectOp {
     - static std::shared_ptr<GrOp> MakeOp(..)
 }
 
+class GrRenderTask {
+    + void prePrepare(GrRecordingContext* context)
+    + void prepare(GrOpFlushState* flushState)
+    + bool execute(GrOpFlushState* flushState)
+    + virtual skgpu::ganesh::OpsTask* asOpsTask()
+    - virtual void onPrePrepare(GrRecordingContext*)
+    - virtual void onPrepare(GrOpFlushState*)
+    - virtual bool onExecute(GrOpFlushState* flushState)
+}
+
+class OpsTask {
+    + void endFlush(GrDrawingManager*) override
+    + void onPrePrepare(GrRecordingContext*) override
+    + void onPrepare(GrOpFlushState* flushState) override
+    + bool onExecute(GrOpFlushState* flushState) override
+    + OpsTask* asOpsTask() override
+}
+
+class GrOpsRenderPass {
+    - virtual bool onBindPipeline(const GrProgramInfo&, const SkRect& drawBounds)
+    + void bindPipeline(const GrProgramInfo&, const SkRect& drawBounds)
+}
+
+class GrGLOpsRenderPass {
+    - GrGLGpu* const fGpu
+    - bool onBindPipeline(const GrProgramInfo& programInfo, const SkRect& drawBounds)
+}
+
+class GrOpFlushState {
+    - GrOpsRenderPass* fOpsRenderPass
+}
+
 SkRefCntBase --|> SkRefCnt
 SkRefCnt --|> SkCapabilities
+SkRefCnt --|> GrRenderTask
 SkCapabilities --|> GrCaps
 GrCaps --|> GrGLCaps
+
+GrRenderTask --|> OpsTask
 
 GrGLSLShaderBuilder --|> GrGLSLVertexGeoBuilder
 GrGLSLVertexGeoBuilder --|> GrGLSLVertexBuilder
@@ -130,6 +166,9 @@ GrOp --|> GrDrawOp
 GrDrawOp --|> GrMeshDrawOp
 GrMeshDrawOp --|> FillRectOpImpl
 FillRectOp -- FillRectOpImpl : > Friend类
+GrOpFlushState -- GrGLOpsRenderPass : > fOpsRenderPass
+
+GrOpsRenderPass --|> GrGLOpsRenderPass
 
 note left of PersistentCache
 skia中缓存shader cache的抽象类

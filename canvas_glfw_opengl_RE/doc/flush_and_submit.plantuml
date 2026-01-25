@@ -1,0 +1,114 @@
+@startuml flush_and_submit
+
+main -> GrDirectContext : flushAndSubmit(sync)
+activate GrDirectContext
+
+GrDirectContext -> GrDirectContext : flush(info)
+activate GrDirectContext
+
+GrDirectContext -> GrDrawingManager : flushSurfaces({}, kNoAccess, info, null)
+activate GrDrawingManager
+
+GrDrawingManager -> GrDrawingManager : flush({}, kNoAccess, info, null)
+activate GrDrawingManager
+
+GrDrawingManager -> GrDrawingManager : executeRenderTasks(flushstate)
+activate GrDrawingManager
+
+GrDrawingManager -> GrRenderTask : execute(flushState)
+activate GrRenderTask
+
+GrRenderTask -> OpsTask : onExecute(flushState)
+activate OpsTask
+
+OpsTask -> GrOp : execute(flushState,chainBounds)
+activate GrOp
+
+GrOp -> FillRRectOpImpl : onExecute(flushState,chainBounds)
+activate FillRRectOpImpl
+
+FillRRectOpImpl -> GrOpFlushState : bindPipelineAndScissorClip(programInfo,chainBounds)
+activate GrOpFlushState
+
+GrOpFlushState -> GrOpFlushState : bindPipeline(programInfo,chainBounds)
+activate GrOpFlushState
+
+GrOpFlushState -> GrOpsRenderPass : bindPipeline(programInfo,chainBounds)
+activate GrOpsRenderPass
+
+GrOpsRenderPass -> GrGLOpsRenderPass : onBindPipeline(programInfo,chainBounds)
+activate GrGLOpsRenderPass
+
+GrGLOpsRenderPass -> GrGLGpu : flushGLState(fRenderTarget,bool,programInfo)
+activate GrGLGpu
+
+GrGLGpu -> ProgramCache : findOrCreateProgramInfo(dContextr,programInfo)
+activate ProgramCache
+
+ProgramCache -> GrGLCaps : makeDesc(null,programInfo)
+activate GrGLCaps
+
+GrGLCaps -> GrProgramDesc : Build(desc,programInfo,this)
+activate GrProgramDesc
+
+GrProgramDesc -> GrProgramDesc : gen_key()
+activate GrProgramDesc
+
+GrProgramDesc -> GrGLCaps : return desc
+deactivate GrProgramDesc
+deactivate GrProgramDesc
+
+GrGLCaps -> ProgramCache : return desc
+deactivate GrGLCaps
+
+ProgramCache -> ProgramCache : findOrCreateProgramImpl(dContextr,primInfo,stat)
+activate ProgramCache
+
+ProgramCache -> GrGLProgramBuilder : CreateProgram(dContext,desc,programInfo)
+activate GrGLProgramBuilder
+
+GrGLProgramBuilder -> GrGLProgramBuilder : finalize(null)
+activate GrGLProgramBuilder
+
+GrGLProgramBuilder -> opengl : glCreateProgram()
+activate opengl
+opengl -> GrGLProgramBuilder : return programID
+deactivate opengl
+
+GrGLProgramBuilder -> opengl : glProgramParameteri(..)
+activate opengl
+note right
+这里需要告知gpu 驱动，需要获取编译后
+的二进制数据
+end note
+
+opengl -> GrGLProgramBuilder : return
+deactivate opengl
+
+GrGLProgramBuilder -> GrGLSLProgramBuilder : finalizeShaders()
+activate GrGLSLProgramBuilder
+
+GrGLSLProgramBuilder -> GrGLSLShaderBuilder : finalize(kVertex_GrShaderFlag)
+activate GrGLSLShaderBuilder
+
+GrGLSLShaderBuilder -> GrGLSLVertexBuilder : onFinalize()
+activate GrGLSLVertexBuilder
+
+GrGLSLVertexBuilder -> GrGLSLShaderBuilder : return
+deactivate GrGLSLVertexBuilder
+
+GrGLSLShaderBuilder -> GrGLSLProgramBuilder : return
+deactivate GrGLSLShaderBuilder
+
+GrGLSLProgramBuilder -> GrGLSLShaderBuilder : finalize(kFragment_GrShaderFlag)
+activate GrGLSLShaderBuilder
+
+GrGLSLShaderBuilder -> GrGLSLFragmentShaderBuilder : onFinalize()
+activate GrGLSLFragmentShaderBuilder
+
+GrGLSLFragmentShaderBuilder -> GrGLSLShaderBuilder : return
+deactivate GrGLSLFragmentShaderBuilder
+
+GrGLSLShaderBuilder -> GrGLSLProgramBuilder : return
+deactivate GrGLSLShaderBuilder
+@enduml
