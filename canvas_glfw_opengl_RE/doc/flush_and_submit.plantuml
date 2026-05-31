@@ -111,4 +111,81 @@ deactivate GrGLSLFragmentShaderBuilder
 
 GrGLSLShaderBuilder -> GrGLSLProgramBuilder : return
 deactivate GrGLSLShaderBuilder
+
+GrGLSLProgramBuilder -> GrGLProgramBuilder : return
+deactivate GrGLSLProgramBuilder
+
+GrGLProgramBuilder -> skgpu : SkSLToGLSL(..)
+activate skgpu
+note right
+先编译 fragment shader 
+有两个参数，glsl数组和 sksl数组，存放
+vertex shader 和 fragment shader
+end note
+
+skgpu -> skgpu : SkSLToBackend(..)
+activate skgpu
+note right
+在这里,sksl转换为glsl
+end note
+
+skgpu -> GrGLProgramBuilder : return
+deactivate skgpu
+deactivate skgpu
+
+GrGLProgramBuilder -> GrGLProgramBuilder : compileAndAttachShaders(..)
+activate GrGLProgramBuilder
+
+GrGLProgramBuilder -> GrGLShaderStringBuilder : GrGLCompileAndAttachShader(..)
+activate GrGLShaderStringBuilder
+
+GrGLShaderStringBuilder -> opengl : glCreateShader(type)
+activate opengl
+
+opengl -> GrGLShaderStringBuilder : return shaderID
+deactivate opengl
+
+GrGLShaderStringBuilder -> opengl : glShaderSource(shaderID,..)
+activate opengl
+
+opengl -> GrGLShaderStringBuilder : return
+deactivate opengl
+
+GrGLShaderStringBuilder -> opengl : glCompileShader(shaderID)
+activate opengl
+
+opengl -> GrGLShaderStringBuilder : return
+deactivate opengl
+
+GrGLShaderStringBuilder -> GrGLProgramBuilder : return
+deactivate GrGLShaderStringBuilder
+note right
+完成对fragment shader的编译
+end note
+deactivate GrGLProgramBuilder
+note left
+vertex shader 编译流程和fragment shader
+一样,不再赘述
+end note
+
+GrGLProgramBuilder -> opengl : glLinkProgram(programID)
+activate opengl
+
+opengl -> GrGLProgramBuilder : return
+deactivate opengl
+
+GrGLProgramBuilder -> GrGLProgramBuilder : storeShaderInCache(..)
+activate GrGLProgramBuilder
+note right
+通过 PersistentCache
+保存编译后的二进制产物。PerssistentCache
+提供了 store() 函数接口，传入 key 和 data
+持久性存储到本地文件中。
+end note
+
+GrGLProgramBuilder -> opengl : glGetProgramBinary(programID,..)
+activate opengl
+
+opengl -> GrGLProgramBuilder : return
+deactivate opengl
 @enduml

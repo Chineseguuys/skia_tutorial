@@ -64,6 +64,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <spdlog/spdlog.h>
 #include "fmt/format.h"
 
@@ -76,6 +77,7 @@
 #include <vector>
 
 #include "GLXContext.h"
+#include "Effect.h"
 
 // modified for compile error
 #ifdef Success
@@ -92,6 +94,7 @@ static int DRAW_HEIGHT = 256;
 static int RESOURCE_ID = 3;
 static bool SAVE_BITMAP = false;
 static bool SAVE_SKP = false;
+static int SK_ALPHA_TYPE = 1;
 static const std::vector<std::string> pngResources = {"../resources/example_1.png",
     "../resources/example_2.png",
     "../resources/example_3.png",
@@ -105,6 +108,8 @@ static const std::vector<std::string> rgbaRawResources = {
     "../resources/@5@layer@99@3008x2120_bpp_1.raw"
 };
 static const std::string fontDir = "../fonts/";
+
+extern "C" Effect* createEffect();
 
 std::string generate_filename(const std::string& prefix, const std::string& postfix) {
     // 获取当前系统时间
@@ -554,6 +559,10 @@ int main(int argc, char* argv[]) {
     app.add_option("-P,--picture", SAVE_SKP, "Save Canvas draw to skp file")
         ->check(CLI::IsMember({0, 1}))
         ->default_val(0);
+    app.add_option("-A,--alpha", SK_ALPHA_TYPE, "alpha type")
+        ->check(CLI::Range(0, 3))
+        ->default_val(SkAlphaType::kPremul_SkAlphaType);
+
     //catch exception and parse the command lines
     CLI11_PARSE(app, argc, argv);
 
@@ -583,7 +592,7 @@ int main(int argc, char* argv[]) {
     SkImageInfo imageInfo = SkImageInfo::Make(
         DRAW_WIDTH, DRAW_HEIGHT,
         kBGRA_8888_SkColorType,
-        kOpaque_SkAlphaType);
+        static_cast<SkAlphaType>(SK_ALPHA_TYPE));
 
     // --------------- begin init x11 ------------
     GLXGLContext glxContext(kGL_GrGLStandard);
@@ -651,10 +660,16 @@ int main(int argc, char* argv[]) {
     }
 
     canvas->drawColor(SK_ColorTRANSPARENT);
+    // -------------- begin load image from png file -------
+    SkBitmap bitmap;
+    loadPngToBitmap(pngResources[RESOURCE_ID].c_str(), bitmap);
+    // -------------- end load image from png file -------
+
     //--------------- begin draw commands ----------------
-    FractalEffect effect;
-    effect.initlize(DRAW_WIDTH, DRAW_HEIGHT);
-    effect.draw(canvas, 8.104f);
+    std::shared_ptr<Effect> effect{createEffect()};
+    effect->initialize(DRAW_WIDTH, DRAW_HEIGHT);
+    effect->setImage(image.get());
+    effect->draw(canvas);
     //--------------- end draw commands ------------------
 
     if (SAVE_SKP) {

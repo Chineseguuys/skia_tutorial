@@ -27,6 +27,7 @@ target("main")
 
     -- 添加源文件
     add_files("main.cpp")
+    add_files("examples/Dst/Dst.cpp")
 
     -- 配置头文件搜索路径（使用绝对路径更可靠）
     add_includedirs("/home/yanjiangha/mirrors/sda1_doc/temp_storage/", "/home/yanjiangha/mirrors/sda1_doc/temp_storage/skia/")
