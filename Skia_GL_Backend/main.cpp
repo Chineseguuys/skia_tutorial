@@ -669,6 +669,7 @@ int main(int argc, char* argv[]) {
     std::shared_ptr<Effect> effect{createEffect()};
     effect->initialize(DRAW_WIDTH, DRAW_HEIGHT);
     effect->setImage(image.get());
+    effect->setBitmap(&bitmap);
     effect->draw(canvas);
     //--------------- end draw commands ------------------
 
