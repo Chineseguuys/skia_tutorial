@@ -37,10 +37,6 @@ public:
         strokePaint.setStrokeWidth(30);
         canvas->drawPath(strokePath, strokePaint);
     }
-
-    void setImage(const SkImage* image) override {
-        mImage = image;
-    }
 };
 
 extern "C" Effect* createEffect() {

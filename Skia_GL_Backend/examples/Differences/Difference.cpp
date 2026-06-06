@@ -12,16 +12,12 @@ public:
         Effect::initialize(canvasWidth, canvasHeight);
     }
 
-    void setImage(const SkImage* image) override {
-        mImage = image;
-    }
-
     void draw(SkCanvas* canvas) override {
         Effect::draw(canvas);
-        canvas->drawImage(mImage, 0, 0);
-        canvas->drawImage(mImage, 128, 0);
-        canvas->drawImage(mImage, 0, 128);
-        canvas->drawImage(mImage, 128, 128);
+        canvas->drawImage(image, 0, 0);
+        canvas->drawImage(image, 128, 0);
+        canvas->drawImage(image, 0, 128);
+        canvas->drawImage(image, 128, 128);
         SkPaint paint;
         paint.setBlendMode(SkBlendMode::kDstATop);
         SkColor alphas[] = { SK_ColorBLACK, SK_ColorTRANSPARENT };

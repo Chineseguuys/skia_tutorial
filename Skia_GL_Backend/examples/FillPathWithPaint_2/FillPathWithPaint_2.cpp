@@ -23,10 +23,6 @@ public:
         canvas->translate(40, 0);
         canvas->drawPath(fillPath, paint);
     }
-
-    void setImage(const SkImage* image) override {
-        mImage = image;
-    }
 };
 
 extern "C" Effect* createEffect() {

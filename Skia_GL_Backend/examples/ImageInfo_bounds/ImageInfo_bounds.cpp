@@ -9,19 +9,15 @@ public:
         Effect::initialize(canvasWidth, canvasHeight);
     }
 
-    void setBitmap(const SkBitmap* bitmap) override {
-        mSource = bitmap;
-    }
-
     void draw(SkCanvas* canvas) override {
         Effect::draw(canvas);
         canvas->scale(.5f, .5f);
-        const SkImageInfo& imageInfo = mSource->info();
+        const SkImageInfo& imageInfo = source.info();
         SkIRect bounds = imageInfo.bounds();
         for (int x : { 0, bounds.width() } ) {
             for (int y : { 0, bounds.height() } ) {
                 spdlog::info("canvas draw image at x: {}, y: {}", x, y);
-                canvas->drawImage(mSource->asImage(), x, y);
+                canvas->drawImage(image, x, y);
             }
         }
     }

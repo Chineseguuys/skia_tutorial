@@ -19,6 +19,7 @@ if is_mode("debug") then
     set_symbols("debug")
     set_optimize("none")
     set_strip("none")
+    add_cxxflags("-g3", {tools = "gcc"})
 end
 
 -- 定义目标类型为可执行程序
@@ -27,7 +28,7 @@ target("main")
 
     -- 添加源文件
     add_files("main.cpp")
-    add_files("examples/ImageInfo_bounds/ImageInfo_bounds.cpp")
+    add_files("examples/ImageInfo_makeWH/ImageInfo_makeWH.cpp")
 
     -- 配置头文件搜索路径（使用绝对路径更可靠）
     add_includedirs("/home/yanjiangha/mirrors/sda1_doc/temp_storage/", "/home/yanjiangha/mirrors/sda1_doc/temp_storage/skia/")

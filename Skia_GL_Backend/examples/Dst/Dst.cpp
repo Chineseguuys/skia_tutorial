@@ -19,18 +19,12 @@ public:
         // SkColor colors[] = { 0x7f55aa00, 0x7f3333bf };
         SkColor colors[] = { SkColorSetARGB(0x7f, 0x55, 0xaa, 0x00), SkColorSetARGB(0x7f, 0x33, 0x33, 0xbf) };
         SkSamplingOptions sampling;
-        canvas->drawAtlas(mImage, xforms, tex, colors, std::size(colors), SkBlendMode::kSrc,
+        canvas->drawAtlas(image.get(), xforms, tex, colors, std::size(colors), SkBlendMode::kSrc,
                         sampling, nullptr, nullptr);
         canvas->translate(128, 0);
-        canvas->drawAtlas(mImage, xforms, tex, colors, std::size(colors), SkBlendMode::kDst,
+        canvas->drawAtlas(image.get(), xforms, tex, colors, std::size(colors), SkBlendMode::kDst,
                         sampling, nullptr, nullptr);
     }
-
-    void setImage(const SkImage* image) override {
-        mImage = image;
-    }
-private:
-    const SkImage* mImage;
 };
 
 extern "C" Effect* createEffect() {

@@ -12,10 +12,10 @@ public:
 
     void draw(SkCanvas* canvas) override {
         Effect::draw(canvas);
-        canvas->drawImage(mImage, 0, 0);
-        canvas->drawImage(mImage, 128, 0);
-        canvas->drawImage(mImage, 0, 128);
-        canvas->drawImage(mImage, 128, 128);
+        canvas->drawImage(image, 0, 0);
+        canvas->drawImage(image, 128, 0);
+        canvas->drawImage(image, 0, 128);
+        canvas->drawImage(image, 128, 128);
         SkPaint paint;
         paint.setBlendMode(SkBlendMode::kDstATop);  // r = d*sa + s*(1-da)
         // SkColor4f alphas[] = { SkColors::kBlack, SkColors::kTransparent };
@@ -25,10 +25,6 @@ public:
         canvas->drawPaint(paint);
         canvas->clipRect( { 30, 30, 226, 226 } );
         canvas->drawColor(0x80bb9977, SkBlendMode::kExclusion);
-    }
-
-    void setImage(const SkImage* image) override {
-        mImage = image;
     }
 };
 

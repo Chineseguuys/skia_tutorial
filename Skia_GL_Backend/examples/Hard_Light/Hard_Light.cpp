@@ -11,17 +11,9 @@ public:
         Effect::initialize(canvasWidth, canvasHeight);
     }
 
-    void setBitmap(const SkBitmap* bitmap) override {
-        mSource = bitmap;
-    }
-
-    void setImage(const SkImage* image) override {
-        mImage = image;
-    }
-
     void draw(SkCanvas* canvas) override {
         Effect::draw(canvas);
-        canvas->drawImage(mImage, 0, 0);
+        canvas->drawImage(image, 0, 0);
         // 0xFFFF00FF
         const SkColor4f colors[] = { {1,0,1,1}, {0,0,0,0} };
         SkPaint paint;

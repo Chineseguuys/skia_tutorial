@@ -85,10 +85,14 @@
 #include "CLI/CLI.hpp"
 #endif
 
-static sk_sp<SkFontMgr> fontMgr;
-static sk_sp<SkTypeface> typeFace;
-static SkBitmap source;
-static sk_sp<SkImage> image;
+// =========================
+GrBackendTexture backEndTexture;
+sk_sp<SkFontMgr> fontMgr;
+sk_sp<SkTypeface> typeFace;
+SkBitmap source;
+sk_sp<SkImage> image;
+DrawOptions drawOptions;
+// =========================
 static int DRAW_WIDTH = 256;
 static int DRAW_HEIGHT = 256;
 static int RESOURCE_ID = 3;
@@ -544,29 +548,32 @@ int main(int argc, char* argv[]) {
 
     // args parser
     CLI::App app{"Skia Fiddle"};
-    app.add_option("-W,--width", DRAW_WIDTH, "canvas draw width")
+    app.add_option("-W,--width", drawOptions.size.fWidth, "canvas draw width")
         ->check(CLI::Range(16, 1024))
         ->default_val(256);
-    app.add_option("-H,--height", DRAW_HEIGHT, "canvas draw height")
+    app.add_option("-H,--height", drawOptions.size.fHeight, "canvas draw height")
         ->check(CLI::Range(16, 8056))
         ->default_val(256);
-    app.add_option("-S,--save", SAVE_BITMAP, "save canvas draw to png file")
+    app.add_option("-S,--save", drawOptions.saveRender, "save canvas draw to png file")
         ->check(CLI::IsMember({0, 1}))
         ->default_val(0);
-    app.add_option("-R,--resource", RESOURCE_ID, "resource id for program loading image")
+    app.add_option("-R,--resource", drawOptions.sourceIndex, "resource id for program loading image")
         ->check(CLI::Range(0, 5))
         ->default_val(2);
-    app.add_option("-P,--picture", SAVE_SKP, "Save Canvas draw to skp file")
+    app.add_option("-P,--picture", drawOptions.skp, "Save Canvas draw to skp file")
         ->check(CLI::IsMember({0, 1}))
         ->default_val(0);
-    app.add_option("-A,--alpha", SK_ALPHA_TYPE, "alpha type")
+    app.add_option("-A,--alpha", drawOptions.alphaType, "alpha type")
         ->check(CLI::Range(0, 3))
         ->default_val(SkAlphaType::kPremul_SkAlphaType);
+    app.add_option("-m,--mipmapping", drawOptions.fMipMapping, "Backend Texutre Mipmapping")
+        ->check(CLI::IsMember({0, 1}))
+        ->default_val(skgpu::Mipmapped::kNo);
 
     //catch exception and parse the command lines
     CLI11_PARSE(app, argc, argv);
 
-    spdlog::info("Canvas: [wxh]=[{}x{}]", DRAW_WIDTH, DRAW_HEIGHT);
+    spdlog::info("Canvas: [wxh]=[{}x{}]", drawOptions.size.fWidth, drawOptions.size.fHeight);
 
     fontMgr = SkFontMgr_New_Custom_Directory(fontDir.c_str());
     if (fontMgr == nullptr) {
@@ -590,9 +597,9 @@ int main(int argc, char* argv[]) {
     }
 
     SkImageInfo imageInfo = SkImageInfo::Make(
-        DRAW_WIDTH, DRAW_HEIGHT,
+        drawOptions.size.fWidth, drawOptions.size.fHeight,
         kBGRA_8888_SkColorType,
-        static_cast<SkAlphaType>(SK_ALPHA_TYPE));
+        static_cast<SkAlphaType>(drawOptions.alphaType));
 
     // --------------- begin init x11 ------------
     GLXGLContext glxContext(kGL_GrGLStandard);
@@ -618,8 +625,8 @@ int main(int argc, char* argv[]) {
 
     // --------------- begin create sk surface ------------
     GrBackendTexture backendTexture = grContext->createBackendTexture(
-        DRAW_WIDTH,
-        DRAW_HEIGHT,
+        drawOptions.size.fWidth,
+        drawOptions.size.fHeight,
         imageInfo.colorType(),
         SkColors::kTransparent,
         skgpu::Mipmapped::kNo,
@@ -628,7 +635,7 @@ int main(int argc, char* argv[]) {
         nullptr,
         nullptr,
         "Offscreen Texture"
-    );
+    ); 
     if (!backendTexture.isValid()) {
         spdlog::error("{}: can not create backend texture!", __FUNCTION__);
         return -1;
@@ -654,26 +661,23 @@ int main(int argc, char* argv[]) {
 
     SkPictureRecorder recorder;
     SkCanvas* recordingCanvas = recorder.beginRecording(DRAW_WIDTH, DRAW_HEIGHT);
-    if (SAVE_SKP) {
+    if (drawOptions.skp) {
         spdlog::debug("{}: replace canvas with recording canvas!", __func__);
         canvas = recordingCanvas;
     }
 
     canvas->drawColor(SK_ColorTRANSPARENT);
     // -------------- begin load image from png file -------
-    SkBitmap bitmap;
-    loadPngToBitmap(pngResources[RESOURCE_ID].c_str(), bitmap);
+    loadPngToBitmap(pngResources[drawOptions.sourceIndex].c_str(), source);
     // -------------- end load image from png file -------
 
     //--------------- begin draw commands ----------------
     std::shared_ptr<Effect> effect{createEffect()};
-    effect->initialize(DRAW_WIDTH, DRAW_HEIGHT);
-    effect->setImage(image.get());
-    effect->setBitmap(&bitmap);
+    effect->initialize(drawOptions.size.fWidth, drawOptions.size.fHeight);
     effect->draw(canvas);
     //--------------- end draw commands ------------------
 
-    if (SAVE_SKP) {
+    if (drawOptions.skp) {
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();
         std::string skpFileName = generate_filename("output", "skp");
         savePictureAsSKP(picture, skpFileName.c_str());
@@ -685,7 +689,7 @@ int main(int argc, char* argv[]) {
     // 将命令提交到 GPU 执行，确保所有绘制操作完成
     grContext->flushAndSubmit(GrSyncCpu::kYes);
 
-    if(SAVE_BITMAP) {
+    if(drawOptions.saveRender) {
         SkBitmap bitmap;
         bitmap.allocPixels(imageInfo, imageInfo.minRowBytes());
         skSurface->readPixels(bitmap, 0, 0);

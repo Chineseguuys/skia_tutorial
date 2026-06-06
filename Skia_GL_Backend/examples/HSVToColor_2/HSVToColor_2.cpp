@@ -11,10 +11,10 @@ public:
 
     void draw(SkCanvas* canvas) override {
         Effect::draw(canvas);
-        canvas->drawImage(mSource->asImage(), 0, 0);
+        canvas->drawImage(image, 0, 0);
         for (int y = 0; y < 256; ++y) {
             for (int x = 0; x < 256; ++x) {
-                SkColor color = mSource->getColor(x, y);
+                SkColor color = source.getColor(x, y);
                 SkScalar hsv[3];
                 SkColorToHSV(color, hsv);
                 hsv[0] = hsv[0] + 90 >= 360 ? hsv[0] - 270 : hsv[0] + 90;
@@ -23,11 +23,6 @@ public:
                 canvas->drawRect(SkRect::MakeXYWH(x, y, 1, 1), paint);
             }
         }
-    }
-
-    void setBitmap(const SkBitmap* bitmap) override {
-        mSource = bitmap;
-        spdlog::info("set bitmap with width {} and height {}", bitmap->width(), bitmap->height());
     }
 };
 
