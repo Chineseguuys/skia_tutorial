@@ -8,6 +8,7 @@
 #include "skia/include/core/SkImage.h"
 #include "skia/include/core/SkFontMgr.h"
 #include "skia/include/gpu/ganesh/SkSurfaceGanesh.h"
+#include <spdlog/spdlog.h>
 
 extern GrBackendTexture backEndTexture;
 extern GrBackendRenderTarget backEndRenderTarget;
@@ -45,7 +46,9 @@ protected:
     uint32_t mCanvasHeight;
 public:
     Effect() : mCanvasWidth(0), mCanvasHeight(0) {}
-    virtual ~Effect() {}
+    virtual ~Effect() {
+        spdlog::info("[{}:{}] destroy effect", __FUNCTION__, __LINE__);
+    }
 
     virtual void initialize(uint32_t canvasWidth, uint32_t canvasHeight) {
         mCanvasWidth = canvasWidth;

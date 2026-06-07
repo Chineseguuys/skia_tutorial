@@ -28,7 +28,7 @@ target("main")
 
     -- 添加源文件
     add_files("main.cpp")
-    add_files("examples/ImageInfo_makeWH/ImageInfo_makeWH.cpp")
+    add_files("examples/Image_CrossContextTextureFromPixmap/Image_CrossContextTextureFromPixmap.cpp")
 
     -- 配置头文件搜索路径（使用绝对路径更可靠）
     add_includedirs("/home/yanjiangha/mirrors/sda1_doc/temp_storage/", "/home/yanjiangha/mirrors/sda1_doc/temp_storage/skia/")
@@ -42,7 +42,7 @@ target("main")
     add_rpathdirs("/home/yanjiangha/mirrors/sda1_doc/temp_storage/skia/out/Shared/")
 
     -- 链接 skia 库
-    add_links("skia", "skshaper", "skunicode_core", "skunicode_icu", "glfw", "GL", "X11", "GLU")
+    add_links("skia", "skshaper", "skunicode_core", "skunicode_icu", "glfw", "GL", "X11", "GLU", "glad")
 
     add_packages("spdlog")
     add_packages("cli11")

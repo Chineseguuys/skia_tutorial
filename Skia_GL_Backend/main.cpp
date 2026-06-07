@@ -1,3 +1,11 @@
+#include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
+#define SK_GL
+#define SK_GANESH
+
+// opengl header
+#include <glad/glad.h>
+
+#include "include/core/SkPixmap.h"
 #include "include/core/SkSurfaceProps.h"
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/ganesh/GrTypes.h"
@@ -50,6 +58,7 @@
 #include "skia/include/core/SkPaint.h"
 #include "skia/include/core/SkScalar.h"
 #include "skia/include/private/base/SkPoint_impl.h"
+// #include "skia/tools/gpu/ManagedBackendTexture.h"
 
 // added for Xlib.h
 #include <X11/Xlib.h>
@@ -73,11 +82,11 @@
 #include <sstream>
 #include <string>
 #include <sys/types.h>
-#include <utility>
 #include <vector>
 
 #include "GLXContext.h"
 #include "Effect.h"
+#include "src/core/SkAutoPixmapStorage.h"
 
 // modified for compile error
 #ifdef Success
@@ -87,18 +96,17 @@
 
 // =========================
 GrBackendTexture backEndTexture;
+GrBackendRenderTarget backEndRenderTarget;
+GrBackendTexture backEndTextureRenderTarget;
 sk_sp<SkFontMgr> fontMgr;
 sk_sp<SkTypeface> typeFace;
 SkBitmap source;
 sk_sp<SkImage> image;
 DrawOptions drawOptions;
 // =========================
-static int DRAW_WIDTH = 256;
-static int DRAW_HEIGHT = 256;
-static int RESOURCE_ID = 3;
-static bool SAVE_BITMAP = false;
-static bool SAVE_SKP = false;
-static int SK_ALPHA_TYPE = 1;
+// sk_sp<sk_gpu_test::ManagedBackendTexture> managedBackendTexture;
+// sk_sp<sk_gpu_test::ManagedBackendTexture> managedBackendTextureRenderTarget;
+// =========================
 static const std::vector<std::string> pngResources = {"../resources/example_1.png",
     "../resources/example_2.png",
     "../resources/example_3.png",
@@ -148,7 +156,9 @@ void saveBitmapAsPng(const SkBitmap& bitmap, const char* fileName) {
     // 0 means do not compress
     options.fZLibLevel = 0;
     if (!SkPngEncoder::Encode(&file, bitmap.pixmap(), options)) {
-        spdlog::error("{}: can not write bitmap to file {}", __FUNCTION__, fileName);
+        spdlog::error("[{}:{}] can not write bitmap to file {}", __FUNCTION__, __LINE__, fileName);
+    } else {
+        spdlog::info("[{}:{}] successful write bitmap to file {}", __FUNCTION__, __LINE__, fileName);
     }
 }
 
@@ -164,24 +174,24 @@ void savePictureAsSKP(sk_sp<SkPicture> picture, const char* fileName) {
 bool loadPngToBitmap(const char* filePath, SkBitmap& bitmap) {
     sk_sp<SkData> data = SkData::MakeFromFileName(filePath);
     if(!data) {
-        spdlog::error("{}: can not open file {}", __func__, filePath);
+        spdlog::error("[{}:{}] can not open file {}", __FUNCTION__, __LINE__, filePath);
         return false;
     }
 
     std::unique_ptr<SkCodec> codec = SkCodec::MakeFromData(data);
     if(!codec) {
-        spdlog::error("{}: can not create codec for png!", __func__);
+        spdlog::error("[{}:{}] can not create codec for png!", __FUNCTION__, __LINE__);
         return false;
     }
     SkImageInfo info = codec->getInfo().makeColorType(kN32_SkColorType).makeAlphaType(kPremul_SkAlphaType);
     if(!bitmap.tryAllocPixels(info)) {
-        spdlog::error("{}: can not alloc pixels for bitmap!", __func__);
+        spdlog::error("[{}:{}] can not alloc pixels for bitmap!", __FUNCTION__, __LINE__);
         return false;
     }
 
     SkCodec::Result result = codec->getPixels(info, bitmap.getPixels(), bitmap.rowBytes());
     image = bitmap.asImage();
-    spdlog::info("{}: get pixels from file {} with result {}", __func__, filePath, result == SkCodec::kSuccess);
+    spdlog::info("[{}:{}]get pixels from file {} with result {}", __FUNCTION__, __LINE__, filePath, result == SkCodec::kSuccess);
     return (result == SkCodec::kSuccess);
 }
 
@@ -198,7 +208,7 @@ bool loadRGBARawFile(const char* fileName, int width, int height, uint32_t** raw
 
     FILE* file = fopen(fileName, "rb");
     if (!file) {
-        spdlog::error("{}: open file \"{}\" failed!", __func__, fileName);
+        spdlog::error("[{}:{}] open file \"{}\" failed!", __FUNCTION__, __LINE__, fileName);
         return false;
     }
 
@@ -207,20 +217,20 @@ bool loadRGBARawFile(const char* fileName, int width, int height, uint32_t** raw
     fseek(file, 0, SEEK_SET);
 
     if (fileSize != static_cast<long>(expectedSize)) {
-        spdlog::error("{}: file size is not equal with expected size! Get {}, expected {}", __func__, fileSize, expectedSize);
+        spdlog::error("[{}:{}] file size is not equal with expected size! Get {}, expected {}", __FUNCTION__, __LINE__, fileSize, expectedSize);
         fclose(file);
         return false;
     }
 
     uint32_t* byteBuffer = new uint32_t[width * height];
     if (!byteBuffer) {
-        spdlog::error("{}: can not alloc memory for raw file!", __func__);
+        spdlog::error("[{}:{}] can not alloc memory for raw file!", __FUNCTION__, __LINE__);
         fclose(file);
         return false;
     }
 
     if (int readed = fread(byteBuffer, 1, expectedSize, file) != expectedSize) {
-        spdlog::info("{}: we need read {} bytes, but read {} acturally!", __func__, expectedSize, readed);
+        spdlog::info("[{}:{}] we need read {} bytes, but read {} acturally!", __FUNCTION__, __LINE__, expectedSize, readed);
         delete [] byteBuffer;
         fclose(file);
         return false;
@@ -234,7 +244,7 @@ bool loadRGBARawFile(const char* fileName, int width, int height, uint32_t** raw
     }
 
     *rawData = byteBuffer;
-    spdlog::info("{}: successful read pixels from file {} with address {}", __func__, fileName, fmt::ptr(byteBuffer));
+    spdlog::info("[{}:{}] successful read pixels from file {} with address {}", __FUNCTION__, __LINE__, fileName, fmt::ptr(byteBuffer));
     fclose(file);
     return true;
 }
@@ -281,6 +291,194 @@ void printSkMatrix(const SkMatrix& matrix, const char* name = "SkMatrix", int pr
               printf(format, buffer[8]); printf(" ┘\n");
 
     return;
+}
+
+static bool setupBackendObjects(GrDirectContext* dContext, const SkBitmap& bm, const DrawOptions& op) {
+    if (!dContext) {
+        spdlog::error("[{}:{}] can not get direct context!", __FUNCTION__, __LINE__);
+        return false;
+    }
+    GrBackendFormat renderableFormat = dContext->defaultBackendFormat(kRGBA_8888_SkColorType, GrRenderable::kYes);
+    SkBitmap rgbaBitmap;
+
+    if (!bm.empty()) {
+        spdlog::trace("[{}:{}] setup backend objects with bitmap!", __FUNCTION__, __LINE__);
+        SkPixmap originalPixmap;
+        const SkPixmap* pixmap = &originalPixmap;
+        if (!bm.peekPixels(&originalPixmap)) {
+            spdlog::error("[{}:{}] can not peek pixels from bitmap!", __FUNCTION__, __LINE__);
+            return false;
+        }
+        constexpr bool kRRGAISNative = (kN32_SkColorType == kRGBA_8888_SkColorType);
+        if (!kRRGAISNative) {
+            if (!rgbaBitmap.tryAllocPixels(bm.info().makeColorType(kRGBA_8888_SkColorType))) {
+                spdlog::error("[{}:{}] can not alloc memory for rgba pixmap!", __FUNCTION__, __LINE__);
+                return false;
+            }
+            if (!bm.readPixels(rgbaBitmap.pixmap())) {
+                spdlog::error("[{}:{}] can not read pixels from bitmap!", __FUNCTION__, __LINE__);
+                return false;
+            }
+
+            pixmap = &rgbaBitmap.pixmap();
+        }
+        // skia private api
+        // managedBackendTexture = sk_gpu_test::ManagedBackendTexture::MakeFromPixmap(
+        //     dContext, *pixmap, drawOptions.fMipMapping, GrRenderable::kYes, GrProtected::kNo);
+        // if (!managedBackendTexture) {
+        //     spdlog::error("{}: can not create managed backend texture!", __FUNCTION__);
+        //     return false;
+        // }
+        // backEndTexture = managedBackendTexture->texture();
+
+        // use gl
+        GLuint texID;
+        glGenTextures(1, &texID);
+        spdlog::info("[{}:{}] create texture with id {}", __FUNCTION__, __LINE__, texID);
+        glBindTexture(GL_TEXTURE_2D, texID);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexImage2D(GL_TEXTURE_2D, 
+            0, 
+            GL_RGBA, 
+            pixmap->width(), pixmap->height(), 0, 
+            GL_RGBA, 
+            GL_UNSIGNED_BYTE, 
+            pixmap->addr()
+        );
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        // use skia
+        GrGLTextureInfo glTexInfo{.fTarget = GL_TEXTURE_2D, .fID = texID, .fFormat = GL_RGBA8};
+        backEndTexture = GrBackendTextures::MakeGL(
+            pixmap->width(), pixmap->height(), 
+            op.fMipMapping, 
+            glTexInfo
+        );
+        if (!backEndTexture.isValid()) {
+            spdlog::error("[{}:{}] can not create backend texture!", __FUNCTION__, __LINE__);
+            return false;
+        }
+    } // end stage 1
+    
+    {
+        // not public api
+        // auto resourceProvider = dContext->priv().resourceProvider();
+        // SkISize offscreenDims = {op.offScreenWidth, op.offScreenHeight};
+        // skia_private::AutoTMalloc<uint32_t> data(offscreenDims.area());
+        // SkOpts::memset32(data.get(), 0, offscreenDims.area());
+
+        // GrMipLevel level0 = {data.get(), offscreenDims.width() * sizeof(uint32_t), nullptr};
+        // constexpr int kSampleCnt = 1;
+        // // in skia private, it may use as this
+        // sk_sp<GrTexture> tmp =
+        //         resourceProvider->createTexture(offscreenDims,
+        //                                         renderableFormat,
+        //                                         GrTextureType::k2D,
+        //                                         GrColorType::kRGBA_8888,
+        //                                         GrRenderable::kYes,
+        //                                         kSampleCnt,
+        //                                         skgpu::Budgeted::kNo,
+        //                                         skgpu::Mipmapped::kNo,
+        //                                         GrProtected::kNo,
+        //                                         &level0,
+        //                                         /*label=*/"Fiddle_SetupBackendObjects");
+        // if (!tmp || !tmp->asRenderTarget()) {
+        //     fputs("GrTexture is invalid.\n", stderr);
+        //     return false;
+        // }
+
+        // backingRenderTarget = sk_ref_sp(tmp->asRenderTarget());
+        spdlog::trace("[{}:{}] create offscreen texture by use gl!", __FUNCTION__, __LINE__);
+        // ==== step1 create texture by use gl =====
+        GLuint texID;
+        glGenTextures(1, &texID);
+        spdlog::info("[{}:{}] create texture with id {}", __FUNCTION__, __LINE__, texID);
+        glBindTexture(GL_TEXTURE_2D, texID);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexImage2D(GL_TEXTURE_2D, 
+            0, 
+            GL_RGBA, 
+            op.offScreenWidth, 
+            op.offScreenHeight, 0, 
+            GL_RGBA, 
+            GL_UNSIGNED_BYTE, 
+            nullptr
+        );
+
+        GLuint fboID;
+        glGenFramebuffers(1, &fboID);
+        spdlog::info("[{}:{}] create framebuffer with id {}", __FUNCTION__, __LINE__, fboID);
+        glBindFramebuffer(GL_FRAMEBUFFER, fboID);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texID, 0);
+        
+        // use skia
+        SkISize offscreenDims = {op.offScreenWidth, op.offScreenHeight};
+        GrGLFramebufferInfo glInfo{.fFBOID = fboID, .fFormat = GL_RGBA8};
+        backEndRenderTarget = GrBackendRenderTargets::MakeGL(
+            offscreenDims.width(), offscreenDims.height(), 
+            1, 8, glInfo);
+        if (!backEndRenderTarget.isValid()) {
+            spdlog::error("[{}:{}] can not create backend render target!", __FUNCTION__, __LINE__);
+            return false;
+        }
+        
+    } // end stage 2
+
+    {
+        // use skia private api
+        // managedBackendTextureRenderTarget = sk_gpu_test::ManagedBackendTexture::MakeWithData(
+        //     dContext,
+        //     op.offScreenWidth,
+        //     op.offScreenHeight,
+        //     renderableFormat,
+        //     SkColors::kTransparent,
+        //     op.fOffScreenMipMapping,
+        //     GrRenderable::kYes,
+        //     GrProtected::kNo);
+        // if (!managedBackendTextureRenderTarget) {
+        //     spdlog::error("{}: can not create backend texture render target!", __FUNCTION__);
+        //     return false;
+        // }
+        // backEndTextureRenderTarget = managedBackendTextureRenderTarget->texture();
+        spdlog::trace("[{}:{}] create offscreen texture render target by use gl!", __FUNCTION__, __LINE__);
+        // use gl
+        int pixelCnt = op.offScreenWidth * op.offScreenHeight;
+        std::vector<uint32_t> pixels(pixelCnt, 0);
+        GLuint texID;
+        glGenTextures(1, &texID);
+        spdlog::debug("{}: create texture with id {}", __FUNCTION__, texID);
+        glBindTexture(GL_TEXTURE_2D, texID);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexImage2D(
+            GL_TEXTURE_2D,
+            0,
+            GL_RGBA,
+            op.offScreenWidth,
+            op.offScreenHeight,
+            0,
+            GL_RGBA,
+            GL_UNSIGNED_BYTE,
+            pixels.data()
+        );
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        // use skia
+        GrGLTextureInfo glTexInfo{.fTarget = GL_TEXTURE_2D, .fID = texID, .fFormat = GL_RGBA8};
+        backEndTextureRenderTarget = GrBackendTextures::MakeGL(
+            op.offScreenWidth, op.offScreenHeight, 
+            op.fOffScreenMipMapping, 
+            glTexInfo
+        );
+        if (!backEndTextureRenderTarget.isValid()) {
+            spdlog::error("{}: can not create backend texture render target!", __FUNCTION__);
+            return false;
+        }
+    } // end stage 3
+
+    return true;
 }
 
 class CuteLittleFibonacciSphereEffect {
@@ -566,18 +764,27 @@ int main(int argc, char* argv[]) {
     app.add_option("-A,--alpha", drawOptions.alphaType, "alpha type")
         ->check(CLI::Range(0, 3))
         ->default_val(SkAlphaType::kPremul_SkAlphaType);
-    app.add_option("-m,--mipmapping", drawOptions.fMipMapping, "Backend Texutre Mipmapping")
+    app.add_option("-M,--mipmapping", drawOptions.fMipMapping, "Backend Texutre Mipmapping")
         ->check(CLI::IsMember({0, 1}))
         ->default_val(skgpu::Mipmapped::kNo);
+    app.add_option("-F,--offscreenmipmapping", drawOptions.fOffScreenMipMapping, "Offscreen Texture Mipmapping")
+        ->check(CLI::IsMember({0, 1}))
+        ->default_val(skgpu::Mipmapped::kNo);
+    app.add_option("-X,--offscreenwidth", drawOptions.offScreenWidth, "Offscreen Texture Width")
+        ->check(CLI::Range(16, 1024))
+        ->default_val(128);
+    app.add_option("-Y,--offscreenheight", drawOptions.offScreenHeight, "Offscreen Texture Height")
+        ->check(CLI::Range(16, 1024))
+        ->default_val(128);
 
     //catch exception and parse the command lines
     CLI11_PARSE(app, argc, argv);
 
-    spdlog::info("Canvas: [wxh]=[{}x{}]", drawOptions.size.fWidth, drawOptions.size.fHeight);
+    spdlog::info("[{}:{}] Canvas: [wxh]=[{}x{}]", __FUNCTION__, __LINE__, drawOptions.size.fWidth, drawOptions.size.fHeight);
 
     fontMgr = SkFontMgr_New_Custom_Directory(fontDir.c_str());
     if (fontMgr == nullptr) {
-        spdlog::error("{}: can not create font manager!", __FUNCTION__);
+        spdlog::error("[{}:{}] can not create font manager!", __FUNCTION__, __LINE__);
     }
 
     int fontFamilyCounts = fontMgr->countFamilies();
@@ -585,7 +792,7 @@ int main(int argc, char* argv[]) {
     for (int idx = 0; idx < fontFamilyCounts; ++idx) {
         SkString fontFamilyName;
         fontMgr->getFamilyName(idx, &fontFamilyName);
-        spdlog::debug("{}: Family[{}]={}", __FUNCTION__, idx, fontFamilyName.c_str());
+        spdlog::debug("[{}:{}] Family[{}]={}", __FUNCTION__, __LINE__, idx, fontFamilyName.c_str());
     }
 
     const char* fontFamily = nullptr;
@@ -593,7 +800,7 @@ int main(int argc, char* argv[]) {
 
     typeFace = fontMgr->legacyMakeTypeface(fontFamily, fontStyle);
     if (typeFace == nullptr) {
-        spdlog::error("{}: can not create type face from font manager!", __FUNCTION__);
+        spdlog::error("[{}:{}] can not create type face from font manager!", __FUNCTION__, __LINE__);
     }
 
     SkImageInfo imageInfo = SkImageInfo::Make(
@@ -605,6 +812,16 @@ int main(int argc, char* argv[]) {
     GLXGLContext glxContext(kGL_GrGLStandard);
     // ----------------end init x11 ------------
 
+    // --------------- begin init glad ------------
+#ifdef SK_GL
+    // add for use opengl api it must add after init x11 and before init ganesh
+    if (!gladLoadGLLoader((GLADloadproc) glXGetProcAddress)) {
+        spdlog::critical("[{}:{}] Failed to Initialize GLAD", __FUNCTION__, __LINE__);
+        return -1;
+    }
+#endif // SK_GL
+    // ----------------end init glad ------------
+
     // --------------- begin init ganesh ------------
     sk_sp<const GrGLInterface> glInterface = nullptr;
     sk_sp<GrDirectContext> grContext = GrDirectContexts::MakeGL(glInterface);
@@ -614,9 +831,9 @@ int main(int argc, char* argv[]) {
     }
     if (glInterface != nullptr) {
         bool valid = glInterface->validate();
-        spdlog::info("{}: gl interface validate = {}", __FUNCTION__, valid);
+        spdlog::info("[{}:{}] gl interface validate = {}", __FUNCTION__, __LINE__, valid);
         if (valid == false) {
-            spdlog::error("{}: gl interface is not valid!", __FUNCTION__);
+            spdlog::error("[{}:{}] gl interface is not valid!", __FUNCTION__, __LINE__);
             return -1;
         }
         glxContext.init(glInterface);
@@ -637,7 +854,7 @@ int main(int argc, char* argv[]) {
         "Offscreen Texture"
     ); 
     if (!backendTexture.isValid()) {
-        spdlog::error("{}: can not create backend texture!", __FUNCTION__);
+        spdlog::error("[{}:{}] can not create backend texture!", __FUNCTION__, __LINE__);
         return -1;
     }
 
@@ -652,7 +869,7 @@ int main(int argc, char* argv[]) {
         &surfaceProps
     );
     if (!skSurface) {
-        spdlog::error("{}: can not create sk surface from backend texture!", __FUNCTION__);
+        spdlog::error("[{}:{}] can not create sk surface from backend texture!", __FUNCTION__, __LINE__);
         return -1;
     }
     // ----------------end create sk surface ------------
@@ -660,31 +877,26 @@ int main(int argc, char* argv[]) {
     SkCanvas* canvas = skSurface->getCanvas();
 
     SkPictureRecorder recorder;
-    SkCanvas* recordingCanvas = recorder.beginRecording(DRAW_WIDTH, DRAW_HEIGHT);
+    SkCanvas* recordingCanvas = recorder.beginRecording(drawOptions.size.fWidth, drawOptions.size.fHeight);
     if (drawOptions.skp) {
-        spdlog::debug("{}: replace canvas with recording canvas!", __func__);
+        spdlog::debug("[{}:{}] replace canvas with recording canvas!", __FUNCTION__, __LINE__);
         canvas = recordingCanvas;
     }
 
     canvas->drawColor(SK_ColorTRANSPARENT);
     // -------------- begin load image from png file -------
     loadPngToBitmap(pngResources[drawOptions.sourceIndex].c_str(), source);
+    if (!setupBackendObjects(grContext.get(), source, drawOptions)) {
+        spdlog::error("[{}:{}] can not setup backend objects!", __FUNCTION__, __LINE__);
+        return -1;
+    }
     // -------------- end load image from png file -------
 
-    //--------------- begin draw commands ----------------
+    // --------------- begin draw commands ----------------
     std::shared_ptr<Effect> effect{createEffect()};
     effect->initialize(drawOptions.size.fWidth, drawOptions.size.fHeight);
     effect->draw(canvas);
-    //--------------- end draw commands ------------------
-
-    if (drawOptions.skp) {
-        sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();
-        std::string skpFileName = generate_filename("output", "skp");
-        savePictureAsSKP(picture, skpFileName.c_str());
-
-        canvas = skSurface->getCanvas();
-        canvas->drawPicture(picture);
-    }
+    // --------------- end draw commands ------------------
 
     // 将命令提交到 GPU 执行，确保所有绘制操作完成
     grContext->flushAndSubmit(GrSyncCpu::kYes);
