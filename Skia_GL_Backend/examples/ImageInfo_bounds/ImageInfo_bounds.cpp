@@ -1,7 +1,7 @@
 #include "../../Effect.h"
 #include <spdlog/spdlog.h>
 
-class ImageInfo_bounds   : public Effect {
+class ImageInfo_bounds: public Effect {
 public:
     ImageInfo_bounds() : Effect() {}
 

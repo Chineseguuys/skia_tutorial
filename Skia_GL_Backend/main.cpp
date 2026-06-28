@@ -797,7 +797,8 @@ int main(int argc, char* argv[]) {
 
     const char* fontFamily = nullptr;
     SkFontStyle fontStyle;
-
+    // matchFamilyStyle 没有 fallback 机制，传 nullptr 就是空。
+    // legacyMakeTypeface 是旧版 API，带默认字体回退逻辑。
     typeFace = fontMgr->legacyMakeTypeface(fontFamily, fontStyle);
     if (typeFace == nullptr) {
         spdlog::error("[{}:{}] can not create type face from font manager!", __FUNCTION__, __LINE__);
