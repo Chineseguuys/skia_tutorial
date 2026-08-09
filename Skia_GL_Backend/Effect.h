@@ -30,6 +30,7 @@ struct DrawOptions {
     bool f16;
     bool textOnly;
     bool saveRender;
+    bool display;
     int sourceIndex;
     int alphaType;
     skgpu::Mipmapped fMipMapping;

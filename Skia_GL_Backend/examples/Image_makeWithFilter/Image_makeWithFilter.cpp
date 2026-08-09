@@ -1,6 +1,7 @@
 #include "../../Effect.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkImage.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
 #include "include/core/SkImageFilter.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkRect.h"
@@ -26,11 +27,20 @@ public:
         SkIRect outSubset;
         SkIPoint offset;
         sk_sp<SkImage> filtered;
-
-        filtered = SkImages::MakeWithFilter(
-            image, offsetFilter.get(),
-            subset, clipBounds, &outSubset, &offset
-        );
+        if (auto rContext = canvas->recordingContext()) {
+            // render in gpu
+            filtered = SkImages::MakeWithFilter(
+                rContext, image, offsetFilter.get(),
+                subset, clipBounds,
+                &outSubset, &offset
+            );
+        } else {
+            // render in cpu
+            filtered = SkImages::MakeWithFilter(
+                image, offsetFilter.get(),
+                subset, clipBounds, &outSubset, &offset
+            );
+        }
 
         SkPaint paint;
         paint.setAntiAlias(true);

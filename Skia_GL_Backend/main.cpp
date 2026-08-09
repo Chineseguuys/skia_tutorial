@@ -50,9 +50,11 @@
 #include "skia/include/effects/SkRuntimeEffect.h"
 #include "skia/include/gpu/ganesh/gl/GrGLDirectContext.h"
 #include "skia/include/gpu/ganesh/gl/GrGLInterface.h"
+#include "skia/include/gpu/ganesh/gl/GrGLAssembleInterface.h"
 #include "skia/include/gpu/ganesh/GrDirectContext.h"
 #include "skia/include/gpu/ganesh/GrBackendSurface.h"
 #include "skia/include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "skia/include/gpu/ganesh/SkImageGanesh.h"
 #include "skia/include/core/SkFont.h"
 #include "skia/include/core/SkImageFilter.h"
 #include "skia/include/core/SkPaint.h"
@@ -60,14 +62,9 @@
 #include "skia/include/private/base/SkPoint_impl.h"
 // #include "skia/tools/gpu/ManagedBackendTexture.h"
 
-// added for Xlib.h
-#include <X11/Xlib.h>
-
 #include <GL/gl.h>
-#include <GL/glx.h>
-#include <GL/glu.h>
+#include <GLFW/glfw3.h>
 
-#include <X11/X.h>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -84,15 +81,11 @@
 #include <sys/types.h>
 #include <vector>
 
-#include "GLXContext.h"
 #include "Effect.h"
 #include "src/core/SkAutoPixmapStorage.h"
 
-// modified for compile error
-#ifdef Success
-#undef Success
+// CLI11 的 Success 宏与 X11 冲突，X11 头文件已移除，直接包含即可
 #include "CLI/CLI.hpp"
-#endif
 
 // =========================
 GrBackendTexture backEndTexture;
@@ -124,6 +117,12 @@ static const std::vector<std::string> rgbaRawResources = {
 static const std::string fontDir = "../fonts/";
 
 extern "C" Effect* createEffect();
+
+static void keyCallback(GLFWwindow* window, int key, int /*scancode*/, int action, int /*mods*/) {
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+        glfwSetWindowShouldClose(window, GLFW_TRUE);
+    }
+}
 
 std::string generate_filename(const std::string& prefix, const std::string& postfix) {
     // 获取当前系统时间
@@ -757,6 +756,9 @@ int main(int argc, char* argv[]) {
     app.add_option("-S,--save", drawOptions.saveRender, "save canvas draw to png file")
         ->check(CLI::IsMember({0, 1}))
         ->default_val(0);
+    app.add_option("-D,--display", drawOptions.display, "display canvas draw to glfw window")
+        ->check(CLI::IsMember({0, 1}))
+        ->default_val(0);
     app.add_option("-R,--resource", drawOptions.sourceIndex, "resource id for program loading image")
         ->check(CLI::Range(0, 5))
         ->default_val(2);
@@ -781,6 +783,12 @@ int main(int argc, char* argv[]) {
 
     //catch exception and parse the command lines
     CLI11_PARSE(app, argc, argv);
+
+    if (drawOptions.display && drawOptions.saveRender) {
+        // 显示模式不保存 PNG（渲染循环内每帧产出，保存会破坏帧循环语义）
+        spdlog::warn("[{}:{}] save png is disabled in display mode!", __FUNCTION__, __LINE__);
+        drawOptions.saveRender = false;
+    }
 
     spdlog::info("[{}:{}] Canvas: [wxh]=[{}x{}]", __FUNCTION__, __LINE__, drawOptions.size.fWidth, drawOptions.size.fHeight);
 
@@ -811,14 +819,37 @@ int main(int argc, char* argv[]) {
         kBGRA_8888_SkColorType,
         static_cast<SkAlphaType>(drawOptions.alphaType));
 
-    // --------------- begin init x11 ------------
-    GLXGLContext glxContext(kGL_GrGLStandard);
-    // ----------------end init x11 ------------
+    // --------------- begin init glfw context ------------
+    if (!glfwInit()) {
+        spdlog::critical("[{}:{}] Failed to initialize GLFW", __FUNCTION__, __LINE__);
+        return -1;
+    }
+    // 离屏模式窗口保持隐藏，显示模式可见
+    if (!drawOptions.display) {
+        glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+    }
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    GLFWwindow* window = glfwCreateWindow(
+        drawOptions.size.fWidth, drawOptions.size.fHeight,
+        drawOptions.display ? "Skia Display" : "offscreen", nullptr, nullptr
+    );
+    if (!window) {
+        spdlog::critical("[{}:{}] Failed to create GLFW window", __FUNCTION__, __LINE__);
+        glfwTerminate();
+        return -1;
+    }
+    glfwMakeContextCurrent(window);
+    if (drawOptions.display) {
+        glfwSetKeyCallback(window, keyCallback);
+    }
+    // ----------------end init glfw context ------------
 
     // --------------- begin init glad ------------
 #ifdef SK_GL
-    // add for use opengl api it must add after init x11 and before init ganesh
-    if (!gladLoadGLLoader((GLADloadproc) glXGetProcAddress)) {
+    // add for use opengl api it must add after init glfw context and before init ganesh
+    if (!gladLoadGLLoader((GLADloadproc) glfwGetProcAddress)) {
         spdlog::critical("[{}:{}] Failed to Initialize GLAD", __FUNCTION__, __LINE__);
         return -1;
     }
@@ -826,20 +857,25 @@ int main(int argc, char* argv[]) {
     // ----------------end init glad ------------
 
     // --------------- begin init ganesh ------------
-    sk_sp<const GrGLInterface> glInterface = nullptr;
+    // 显式用 glfwGetProcAddress 组装 GL 接口，避免依赖 GLX 后端（Wayland 会话下 GLFW 走 EGL）
+    sk_sp<const GrGLInterface> glInterface = GrGLMakeAssembledInterface(
+        nullptr,
+        [](void*, const char name[]) {
+            return reinterpret_cast<GrGLFuncPtr>(glfwGetProcAddress(name));
+        }
+    );
+    if (!glInterface) {
+        spdlog::critical("[{}:{}] can not assemble gl interface!", __FUNCTION__, __LINE__);
+        return -1;
+    }
+    if (!glInterface->validate()) {
+        spdlog::critical("[{}:{}] gl interface is not valid!", __FUNCTION__, __LINE__);
+        return -1;
+    }
     sk_sp<GrDirectContext> grContext = GrDirectContexts::MakeGL(glInterface);
     if (!grContext) {
         spdlog::error("{}: can not create GrDirectContext!", __FUNCTION__);
         return -1;
-    }
-    if (glInterface != nullptr) {
-        bool valid = glInterface->validate();
-        spdlog::info("[{}:{}] gl interface validate = {}", __FUNCTION__, __LINE__, valid);
-        if (valid == false) {
-            spdlog::error("[{}:{}] gl interface is not valid!", __FUNCTION__, __LINE__);
-            return -1;
-        }
-        glxContext.init(glInterface);
     }
     // ----------------end init ganesh ------------
 
@@ -877,13 +913,59 @@ int main(int argc, char* argv[]) {
     }
     // ----------------end create sk surface ------------
 
+    // --------------- begin init display surface ------------
+    sk_sp<SkSurface> windowSurface = nullptr;
+    sk_sp<SkImage> offscreenImage = nullptr;
+    if (drawOptions.display) {
+        // 窗口默认 framebuffer (FBO 0)，GL 惯例 origin 为 BottomLeft
+        GrGLFramebufferInfo fbInfo = { .fFBOID = 0, .fFormat = GL_RGBA8 };
+        GrBackendRenderTarget renderTarget = GrBackendRenderTargets::MakeGL(
+            drawOptions.size.fWidth, drawOptions.size.fHeight, 0, 0, fbInfo
+        );
+        if (!renderTarget.isValid()) {
+            spdlog::critical("[{}:{}] can not create backend render target for display!", __FUNCTION__, __LINE__);
+            return -1;
+        }
+        windowSurface = SkSurfaces::WrapBackendRenderTarget(
+            grContext.get(),
+            renderTarget,
+            kBottomLeft_GrSurfaceOrigin,
+            imageInfo.colorType(),
+            imageInfo.refColorSpace(),
+            &surfaceProps
+        );
+        if (!windowSurface) {
+            spdlog::critical("[{}:{}] can not create window surface!", __FUNCTION__, __LINE__);
+            return -1;
+        }
+        // 离屏 texture 包成 SkImage，每帧仅引用、不重建
+        offscreenImage = SkImages::AdoptTextureFrom(
+            grContext.get(),
+            backendTexture,
+            kTopLeft_GrSurfaceOrigin,
+            imageInfo.colorType(),
+            imageInfo.alphaType(),
+            imageInfo.refColorSpace()
+        );
+        if (!offscreenImage) {
+            spdlog::critical("[{}:{}] can not adopt offscreen texture to image!", __FUNCTION__, __LINE__);
+            return -1;
+        }
+    }
+    // ----------------end init display surface ------------
+
     SkCanvas* canvas = skSurface->getCanvas();
 
     SkPictureRecorder recorder;
     SkCanvas* recordingCanvas = recorder.beginRecording(drawOptions.size.fWidth, drawOptions.size.fHeight);
     if (drawOptions.skp) {
-        spdlog::debug("[{}:{}] replace canvas with recording canvas!", __FUNCTION__, __LINE__);
-        canvas = recordingCanvas;
+        if (drawOptions.display) {
+            // recorder 录制画布不支持逐帧循环，显示模式下忽略
+            spdlog::warn("[{}:{}] skp is not supported in display mode, ignore it!", __FUNCTION__, __LINE__);
+        } else {
+            spdlog::debug("[{}:{}] replace canvas with recording canvas!", __FUNCTION__, __LINE__);
+            canvas = recordingCanvas;
+        }
     }
 
     canvas->drawColor(SK_ColorTRANSPARENT);
@@ -898,19 +980,46 @@ int main(int argc, char* argv[]) {
     // --------------- begin draw commands ----------------
     std::shared_ptr<Effect> effect{createEffect()};
     effect->initialize(drawOptions.size.fWidth, drawOptions.size.fHeight);
-    effect->draw(canvas);
+
+    if (drawOptions.display)  {
+        // --------------- begin display render loop ----------------
+        spdlog::info("[{}:{}] begin display loop, press ESC or close window to exit", __FUNCTION__, __LINE__);
+        while (!glfwWindowShouldClose(window)) {
+            // 子过程 1：skia 渲染到离屏 texture（原逻辑，仅清屏改为每帧执行）
+            canvas->drawColor(SK_ColorTRANSPARENT);
+            effect->draw(canvas);
+            grContext->flushAndSubmit(GrSyncCpu::kNo);
+
+            // 子过程 2：离屏 texture 贴到窗口 framebuffer
+            SkCanvas* winCanvas = windowSurface->getCanvas();
+            winCanvas->drawImage(offscreenImage, 0, 0);
+            skgpu::ganesh::FlushAndSubmit(windowSurface.get());
+
+            // 子过程 3：呈现并处理事件
+            glfwSwapBuffers(window);
+            glfwPollEvents();
+            frame += 1.0;
+        }
+        // ----------------end display render loop ----------------
+    } else {
+        // 离屏路径：一次性渲染后保存
+        effect->draw(canvas);
+        // 将命令提交到 GPU 执行，确保所有绘制操作完成
+        grContext->flushAndSubmit(GrSyncCpu::kYes);
+
+        if (drawOptions.saveRender) {
+            // 保存当前离屏帧为 PNG（调用前需已 flush）
+            SkBitmap bitmap;
+            bitmap.allocPixels(imageInfo, imageInfo.minRowBytes());
+            skSurface->readPixels(bitmap, 0, 0);
+
+            std::string pngName = generate_filename("output", "png");
+            saveBitmapAsPng(bitmap, pngName.c_str());
+        }
+    }
     // --------------- end draw commands ------------------
 
-    // 将命令提交到 GPU 执行，确保所有绘制操作完成
-    grContext->flushAndSubmit(GrSyncCpu::kYes);
-
-    if(drawOptions.saveRender) {
-        SkBitmap bitmap;
-        bitmap.allocPixels(imageInfo, imageInfo.minRowBytes());
-        skSurface->readPixels(bitmap, 0, 0);
-
-        std::string pngName = generate_filename("output", "png");
-        saveBitmapAsPng(bitmap, pngName.c_str());
-    }
+    glfwDestroyWindow(window);
+    glfwTerminate();
     return 0;
 }

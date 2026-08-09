@@ -1,4 +1,5 @@
 #include "../../Effect.h"
+#include "include/core/SkColor.h"
 
 class Image_makeSubset : public Effect {
 public:
