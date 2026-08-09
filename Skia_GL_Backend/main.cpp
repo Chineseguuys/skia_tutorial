@@ -103,6 +103,8 @@ sk_sp<SkTypeface> typeFace;
 SkBitmap source;
 sk_sp<SkImage> image;
 DrawOptions drawOptions;
+double duration = 0.0;
+double frame = 5.0;
 // =========================
 // sk_sp<sk_gpu_test::ManagedBackendTexture> managedBackendTexture;
 // sk_sp<sk_gpu_test::ManagedBackendTexture> managedBackendTextureRenderTarget;

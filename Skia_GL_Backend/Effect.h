@@ -17,6 +17,8 @@ extern sk_sp<SkFontMgr> fontMgr;
 extern sk_sp<SkTypeface> typeFace;
 extern SkBitmap source;
 extern sk_sp<SkImage> image;
+extern double duration;
+extern double frame;
 
 struct DrawOptions {
     SkISize size;
